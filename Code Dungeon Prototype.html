@@ -12,6 +12,7 @@
   .bar > div { height: 100%; background: #E24B4A; transition: width 0.15s; }
   button { background: transparent; color: #D3D1C7; border: 1px solid #555; border-radius: 5px; padding: 5px 14px; font-size: 13px; cursor: pointer; }
   button:hover { background: #2a2a28; }
+  button:disabled { opacity: 0.35; cursor: default; }
   button.primary { background: #1D9E75; border-color: #1D9E75; color: #04342C; font-weight: 600; }
   .main { display: flex; min-height: calc(100vh - 52px); }
   .left { flex: 1; min-width: 320px; display: flex; flex-direction: column; border-right: 1px solid #333; }
@@ -36,6 +37,11 @@
 
 <div class="topbar">
   <h1>Code Dungeon <span style="color:#888780;font-weight:400;">prototype v0</span></h1>
+  <div style="display:flex;align-items:center;gap:4px;">
+    <button id="prevlv" style="padding:5px 8px;">◀</button>
+    <span id="lvname" style="font-size:13px;color:#F1EFE8;min-width:96px;text-align:center;"></span>
+    <button id="nextlv" style="padding:5px 8px;">▶</button>
+  </div>
   <div class="hpwrap">HP <div class="bar"><div id="hpbar" style="width:100%"></div></div> <span id="hptext">50/50</span></div>
   <div class="hpwrap">藥水 <span id="potiontext">0</span></div>
   <button id="speedbtn">速度 1x</button>
@@ -93,19 +99,59 @@ if (enemies.length > 0) {
 <script>
 "use strict";
 
-var MAPSRC = [
-  "############",
-  "#......#...#",
-  "#.h.s..#.g.#",
-  "#......+...#",
-  "###.####.###",
-  "#...~~~....#",
-  "#.!.~~~.g..#",
-  "#..~~~.>...#",
-  "############"
+var LEVELS = [
+  { name: "初戰走廊", hint: "基礎：移動與攻擊", map: [
+    "############",
+    "#h..s....g>#",
+    "############"
+  ]},
+  { name: "毒沼與抉擇", hint: "藥水、地形傷害與路線選擇", map: [
+    "############",
+    "#......#...#",
+    "#.h.s..#.g.#",
+    "#......+...#",
+    "###.####.###",
+    "#...~~~....#",
+    "#.!.~~~.g..#",
+    "#..~~~.>...#",
+    "############"
+  ]},
+  { name: "迷宮", hint: "樓梯在深處，走錯路有毒沼等著", map: [
+    "############",
+    "#h..#....g.#",
+    "##.##.####.#",
+    "#..#..#....#",
+    "#.##.##.####",
+    "#.#..#...~~#",
+    "#.#.##.#.~>#",
+    "#....#.#...#",
+    "############"
+  ]},
+  { name: "亂鬥大廳", hint: "多敵人：目標的優先順序很重要", map: [
+    "############",
+    "#h.....#...#",
+    "#..g...#.!.#",
+    "#......g..g#",
+    "#.!..####..#",
+    "#..g.#..s.>#",
+    "#....#.....#",
+    "############"
+  ]},
+  { name: "Boss 房", hint: "歐克頭目擋在樓梯前——硬拚還是衝刺？", map: [
+    "############",
+    "#h...#.....#",
+    "#.!..#..g..#",
+    "#....+..B.>#",
+    "#.!..#.....#",
+    "############"
+  ]}
 ];
-var W = 12, H = 9;
-var ENEMY_DEF = { s: { type: "slime", hp: 10, atk: 3 }, g: { type: "goblin", hp: 18, atk: 5 } };
+var MAPSRC, W, H;
+var ENEMY_DEF = {
+  s: { type: "slime", hp: 10, atk: 3 },
+  g: { type: "goblin", hp: 18, atk: 5 },
+  B: { type: "orc-boss", hp: 32, atk: 7 }
+};
 var HERO_MAXHP = 50, HERO_ATK = 6, POTION_HEAL = 30, POISON_DMG = 4, SIGHT = 3;
 var SPEEDS = [["1x", 300], ["4x", 90], ["16x", 25], ["MAX", 0]];
 
@@ -113,7 +159,25 @@ var st, running = false, stopFlag = false, speedIdx = 0;
 var paused = false, stepResolve = null, prevHp = 0;
 var STOP = { __stop: true };
 
-var SAVE_KEY = "codeDungeonProtoV1";
+var SAVE_KEY = "codeDungeonProtoV2";
+var curLevel = 0;
+
+function unlockedCount() { return loadSave().unlocked || 1; }
+function updateLvBtns() {
+  document.getElementById("prevlv").disabled = curLevel === 0;
+  document.getElementById("nextlv").disabled = curLevel >= unlockedCount() - 1 || curLevel >= LEVELS.length - 1;
+}
+function loadLevel(i) {
+  curLevel = Math.max(0, Math.min(LEVELS.length - 1, i));
+  MAPSRC = LEVELS[curLevel].map;
+  H = MAPSRC.length; W = MAPSRC[0].length;
+  document.getElementById("map").style.gridTemplateColumns = "repeat(" + W + ", 32px)";
+  document.getElementById("lvname").textContent = (curLevel + 1) + "/" + LEVELS.length + " " + LEVELS[curLevel].name;
+  save({ cur: curLevel });
+  reset();
+  renderRecord();
+  updateLvBtns();
+}
 function loadSave() {
   try { return JSON.parse(localStorage.getItem(SAVE_KEY)) || {}; } catch (e) { return {}; }
 }
@@ -126,9 +190,10 @@ function save(patch) {
 }
 function renderRecord() {
   var s = loadSave(), el = document.getElementById("record");
-  if (!s.attempts) { el.textContent = "尚無挑戰紀錄"; return; }
-  var t = "挑戰 " + s.attempts + " 次 ・ 通關 " + (s.wins || 0) + " 次";
-  if (s.best) t += " ・ 最佳 " + s.best.turns + " 回合（受傷 " + s.best.dmg + "）";
+  var rec = (s.levels || {})[curLevel];
+  if (!rec || !rec.attempts) { el.textContent = "本關尚無挑戰紀錄"; return; }
+  var t = "本關挑戰 " + rec.attempts + " 次 ・ 通關 " + (rec.wins || 0) + " 次";
+  if (rec.best) t += " ・ 最佳 " + rec.best.turns + " 回合（受傷 " + rec.best.dmg + "）";
   el.textContent = t;
 }
 
@@ -148,7 +213,7 @@ function reset() {
   for (var y = 0; y < H; y++) for (var x = 0; x < W; x++) {
     var c = MAPSRC[y][x];
     if (c === "h") { st.hero.x = x; st.hero.y = y; }
-    else if (ENEMY_DEF[c]) { var d = ENEMY_DEF[c]; st.enemies.push({ id: id++, x: x, y: y, hp: d.hp, maxhp: d.hp, atk: d.atk, type: d.type }); }
+    else if (ENEMY_DEF[c]) { var d = ENEMY_DEF[c]; st.enemies.push({ id: id++, x: x, y: y, hp: d.hp, maxhp: d.hp, atk: d.atk, type: d.type, ch: c }); }
     else if (c === "!") st.items.push({ x: x, y: y, type: "potion" });
     else if (c === ">") st.stairs = { x: x, y: y };
   }
@@ -156,6 +221,7 @@ function reset() {
   document.getElementById("log").innerHTML = "";
   document.getElementById("overlay").style.display = "none";
   render();
+  addLog("第 " + (curLevel + 1) + " 關「" + LEVELS[curLevel].name + "」：" + LEVELS[curLevel].hint, "sys");
 }
 
 function reveal() {
@@ -196,7 +262,7 @@ function render() {
     for (var i = 0; i < st.items.length; i++) if (st.items[i].x === x && st.items[i].y === y) { bg = "#FAC775"; txt = "♥"; }
     for (var j = 0; j < st.enemies.length; j++) {
       var e = st.enemies[j];
-      if (e.x === x && e.y === y) { bg = "#F0997B"; txt = e.type === "slime" ? "s" : "g"; }
+      if (e.x === x && e.y === y) { bg = e.ch === "B" ? "#D85A30" : "#F0997B"; txt = e.ch; }
     }
     if (st.hero.x === x && st.hero.y === y) { bg = "#5DCAA5"; txt = "@"; }
     var dim = visibleNow(x, y) ? "" : "filter:brightness(0.45);";
@@ -210,7 +276,7 @@ function render() {
   document.getElementById("stats").textContent = "回合 " + st.turn + " ・ 擊殺 " + st.kills + " ・ 受傷 " + st.dmgTaken;
 }
 
-function bfs(sx, sy, goal) {
+function bfs(sx, sy, goal, blocked) {
   var prev = {}, q = [[sx, sy]], found = null;
   prev[key(sx, sy)] = null;
   while (q.length) {
@@ -219,7 +285,9 @@ function bfs(sx, sy, goal) {
     var dirs = [[0, -1], [0, 1], [-1, 0], [1, 0]];
     for (var i = 0; i < 4; i++) {
       var nx = cur[0] + dirs[i][0], ny = cur[1] + dirs[i][1];
-      if (!isWall(nx, ny) && !(key(nx, ny) in prev)) { prev[key(nx, ny)] = cur; q.push([nx, ny]); }
+      if (isWall(nx, ny) || (key(nx, ny) in prev)) continue;
+      if (blocked && blocked(nx, ny) && !goal(nx, ny)) continue;
+      prev[key(nx, ny)] = cur; q.push([nx, ny]);
     }
   }
   if (!found) return null;
@@ -227,6 +295,7 @@ function bfs(sx, sy, goal) {
   while (prev[key(node[0], node[1])]) { path.unshift(node); node = prev[key(node[0], node[1])]; }
   return path;
 }
+function enemyBlocked(x, y) { return !!enemyAt(x, y); }
 
 function enemyAt(x, y) {
   for (var i = 0; i < st.enemies.length; i++) if (st.enemies[i].x === x && st.enemies[i].y === y) return st.enemies[i];
@@ -271,18 +340,27 @@ function endRun(win) {
   document.getElementById("ovtitle").textContent = win ? "通關！" : "你死了";
   document.getElementById("ovtitle").style.color = win ? "#5DCAA5" : "#F09595";
   document.getElementById("ovstats").textContent = "回合 " + st.turn + " ・ 擊殺 " + st.kills + " ・ 共受到 " + st.dmgTaken + " 點傷害";
-  document.getElementById("ovhint").textContent = win ? "試試看：能不能用更少回合、更少受傷通關？" : "死因：" + (st.lastHit || "未知") + " ── 改改程式再來一次";
+  var hint;
+  if (!win) hint = "死因：" + (st.lastHit || "未知") + " ── 改改程式再來一次";
+  else if (curLevel < LEVELS.length - 1) hint = "已解鎖下一關，按 ▶ 前往";
+  else hint = "全部通關！試試看：能不能用更少回合、更少受傷？";
+  document.getElementById("ovhint").textContent = hint;
   addLog(win ? "=== 通關！ ===" : "=== 死亡（死因：" + (st.lastHit || "未知") + "）===", win ? "good" : "bad");
   setRunBtn(false);
   var s = loadSave();
-  s.attempts = (s.attempts || 0) + 1;
+  if (!s.levels) s.levels = {};
+  var rec = s.levels[curLevel] || { attempts: 0, wins: 0, best: null };
+  rec.attempts++;
   if (win) {
-    s.wins = (s.wins || 0) + 1;
-    if (!s.best || st.turn < s.best.turns) s.best = { turns: st.turn, dmg: st.dmgTaken };
+    rec.wins++;
+    if (!rec.best || st.turn < rec.best.turns) rec.best = { turns: st.turn, dmg: st.dmgTaken };
+    s.unlocked = Math.max(s.unlocked || 1, Math.min(curLevel + 2, LEVELS.length));
   }
+  s.levels[curLevel] = rec;
   s.lastLog = document.getElementById("log").innerHTML;
   save(s);
   renderRecord();
+  updateLvBtns();
 }
 
 function delay(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
@@ -339,7 +417,8 @@ function makeApi() {
     moveToward: async function (t) {
       loopGuard = 0;
       if (!t || typeof t.x !== "number") { addLog("moveToward() 需要一個有 x, y 的目標", "warn"); await tick(); return; }
-      var path = bfs(st.hero.x, st.hero.y, function (x, y) { return x === t.x && y === t.y; });
+      var path = bfs(st.hero.x, st.hero.y, function (x, y) { return x === t.x && y === t.y; }, enemyBlocked);
+      if (!path) path = bfs(st.hero.x, st.hero.y, function (x, y) { return x === t.x && y === t.y; });
       if (!path) addLog("走不到那裡，浪費一回合", "warn");
       else heroStep(path[0][0], path[0][1]);
       await tick();
@@ -364,10 +443,10 @@ function makeApi() {
     },
     explore: async function () {
       loopGuard = 0;
-      var path = bfs(st.hero.x, st.hero.y, function (x, y) { return !st.seen[key(x, y)] && !isWall(x, y); });
+      var path = bfs(st.hero.x, st.hero.y, function (x, y) { return !st.seen[key(x, y)] && !isWall(x, y); }, enemyBlocked);
       if (!path) {
         if (!st.exploreDone) { addLog("已無可探索的區域，朝樓梯前進", "sys"); st.exploreDone = true; }
-        var p2 = bfs(st.hero.x, st.hero.y, function (x, y) { return x === st.stairs.x && y === st.stairs.y; });
+        var p2 = bfs(st.hero.x, st.hero.y, function (x, y) { return x === st.stairs.x && y === st.stairs.y; }, enemyBlocked);
         if (p2) heroStep(p2[0][0], p2[0][1]);
       }
       else heroStep(path[0][0], path[0][1]);
@@ -467,7 +546,29 @@ document.getElementById("editor").addEventListener("keydown", function (e) {
   }
 });
 
-reset();
+document.getElementById("prevlv").addEventListener("click", function () {
+  if (running) return;
+  loadLevel(curLevel - 1);
+});
+document.getElementById("nextlv").addEventListener("click", function () {
+  if (running) return;
+  loadLevel(curLevel + 1);
+});
+
+(function migrate() {
+  try {
+    if (!localStorage.getItem(SAVE_KEY) && localStorage.getItem("codeDungeonProtoV1")) {
+      var old = JSON.parse(localStorage.getItem("codeDungeonProtoV1")) || {};
+      var nu = { code: old.code, apiOpen: old.apiOpen, levels: {}, unlocked: 2, cur: 1 };
+      if (old.attempts) nu.levels["1"] = { attempts: old.attempts, wins: old.wins || 0, best: old.best || null };
+      if (old.wins) nu.unlocked = 3;
+      localStorage.setItem(SAVE_KEY, JSON.stringify(nu));
+      localStorage.removeItem("codeDungeonProtoV1");
+    }
+  } catch (e) {}
+})();
+
+loadLevel(Math.min(loadSave().cur || 0, unlockedCount() - 1));
 
 (function restore() {
   try {
