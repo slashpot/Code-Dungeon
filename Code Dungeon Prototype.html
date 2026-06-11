@@ -40,6 +40,10 @@
   <div class="hpwrap">藥水 <span id="potiontext">0</span></div>
   <button id="speedbtn">速度 1x</button>
   <button id="runbtn" class="primary">▶ 執行</button>
+  <button id="pausebtn">⏸ 暫停</button>
+  <button id="stepbtn">⏭ 下一步</button>
+  <button id="resetbtn">↺ 重置關卡</button>
+  <label style="font-size:12px;color:#B4B2A9;display:flex;align-items:center;gap:4px;"><input type="checkbox" id="autopause">受傷自動暫停</label>
 </div>
 
 <div class="main">
@@ -77,8 +81,8 @@ if (enemies.length > 0) {
     </div>
     <div class="legend">
       <span><i style="background:#5DCAA5"></i>勇者</span><span><i style="background:#F0997B"></i>敵人</span>
-      <span><i style="background:#FAC775"></i>藥水</span><span><i style="background:#85B7EB"></i>樓梯</span>
-      <span><i style="background:#534AB7"></i>毒沼 (-4HP)</span><span><i style="background:#252524"></i>未探索</span>
+      <span><i style="background:#FAC775"></i>藥水 (+30HP)</span><span><i style="background:#85B7EB"></i>樓梯</span>
+      <span><i style="background:#534AB7"></i>毒沼 (-4HP)</span><span><i style="background:#1d1d1c"></i>暗 = 勇者視野外（API 拿不到）</span>
     </div>
     <div id="stats">回合 0 ・ 擊殺 0 ・ 受傷 0</div>
     <div id="log"></div>
@@ -105,7 +109,12 @@ var HERO_MAXHP = 50, HERO_ATK = 6, POTION_HEAL = 30, POISON_DMG = 4, SIGHT = 3;
 var SPEEDS = [["1x", 300], ["4x", 90], ["16x", 25], ["MAX", 0]];
 
 var st, running = false, stopFlag = false, speedIdx = 0;
+var paused = false, stepResolve = null, prevHp = 0;
 var STOP = { __stop: true };
+
+function setPauseUi() {
+  document.getElementById("pausebtn").textContent = paused ? "▶ 繼續" : "⏸ 暫停";
+}
 
 function key(x, y) { return x + "," + y; }
 function isWall(x, y) { return x < 0 || y < 0 || x >= W || y >= H || MAPSRC[y][x] === "#"; }
@@ -161,19 +170,17 @@ function addLog(msg, cls) {
 function render() {
   var html = "";
   for (var y = 0; y < H; y++) for (var x = 0; x < W; x++) {
-    var bg = "#252524", txt = "";
-    if (st.seen[key(x, y)]) {
-      var c = MAPSRC[y][x];
-      bg = c === "#" ? "#0f0f0e" : isPoison(x, y) ? "#3C3489" : "#3a3a37";
-      if (st.stairs && st.stairs.x === x && st.stairs.y === y) { bg = "#85B7EB"; txt = "▼"; }
-      for (var i = 0; i < st.items.length; i++) if (st.items[i].x === x && st.items[i].y === y) { bg = "#FAC775"; txt = "♥"; }
-      for (var j = 0; j < st.enemies.length; j++) {
-        var e = st.enemies[j];
-        if (e.x === x && e.y === y && visibleNow(x, y)) { bg = "#F0997B"; txt = e.type === "slime" ? "s" : "g"; }
-      }
-      if (st.hero.x === x && st.hero.y === y) { bg = "#5DCAA5"; txt = "@"; }
+    var c = MAPSRC[y][x], txt = "";
+    var bg = c === "#" ? "#0f0f0e" : isPoison(x, y) ? "#3C3489" : "#3a3a37";
+    if (st.stairs && st.stairs.x === x && st.stairs.y === y) { bg = "#85B7EB"; txt = "▼"; }
+    for (var i = 0; i < st.items.length; i++) if (st.items[i].x === x && st.items[i].y === y) { bg = "#FAC775"; txt = "♥"; }
+    for (var j = 0; j < st.enemies.length; j++) {
+      var e = st.enemies[j];
+      if (e.x === x && e.y === y) { bg = "#F0997B"; txt = e.type === "slime" ? "s" : "g"; }
     }
-    html += '<div class="cell" style="background:' + bg + ';color:#161615;font-weight:700;">' + txt + "</div>";
+    if (st.hero.x === x && st.hero.y === y) { bg = "#5DCAA5"; txt = "@"; }
+    var dim = visibleNow(x, y) ? "" : "filter:brightness(0.45);";
+    html += '<div class="cell" style="background:' + bg + ';color:#161615;font-weight:700;' + dim + '">' + txt + "</div>";
   }
   document.getElementById("map").innerHTML = html;
   var h = st.hero;
@@ -213,7 +220,6 @@ function heroStep(nx, ny) {
   for (var i = st.items.length - 1; i >= 0; i--) {
     if (st.items[i].x === nx && st.items[i].y === ny) { st.hero.potions++; st.items.splice(i, 1); addLog("撿到藥水！", "good"); }
   }
-  if (isPoison(nx, ny)) { st.hero.hp -= POISON_DMG; st.dmgTaken += POISON_DMG; st.lastHit = "毒沼"; addLog("踩到毒沼 -" + POISON_DMG + " HP", "bad"); }
 }
 
 function enemyTurn() {
@@ -239,6 +245,7 @@ function enemyTurn() {
 
 function endRun(win) {
   running = false;
+  paused = false; setPauseUi();
   var ov = document.getElementById("overlay");
   ov.style.display = "flex";
   document.getElementById("ovtitle").textContent = win ? "通關！" : "你死了";
@@ -253,14 +260,29 @@ function delay(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
 
 async function tick() {
   st.turn++;
+  if (isPoison(st.hero.x, st.hero.y)) {
+    st.hero.hp -= POISON_DMG; st.dmgTaken += POISON_DMG; st.lastHit = "毒沼";
+    addLog("身處毒沼 -" + POISON_DMG + " HP", "bad");
+  }
   enemyTurn();
   reveal();
   render();
   if (st.hero.hp <= 0) { endRun(false); throw STOP; }
   if (st.hero.x === st.stairs.x && st.hero.y === st.stairs.y) { endRun(true); throw STOP; }
   if (stopFlag) { running = false; addLog("已手動停止", "sys"); setRunBtn(false); throw STOP; }
-  await delay(SPEEDS[speedIdx][1]);
-  if (SPEEDS[speedIdx][1] === 0 && st.turn % 10 === 0) await delay(0);
+  if (document.getElementById("autopause").checked && st.hero.hp < prevHp && !paused) {
+    paused = true; setPauseUi();
+    addLog("受傷，自動暫停（按「下一步」逐回合看，或按「繼續」）", "sys");
+  }
+  prevHp = st.hero.hp;
+  if (paused) {
+    await new Promise(function (r) { stepResolve = r; });
+    stepResolve = null;
+    if (stopFlag) { running = false; addLog("已手動停止", "sys"); setRunBtn(false); throw STOP; }
+  } else {
+    await delay(SPEEDS[speedIdx][1]);
+    if (SPEEDS[speedIdx][1] === 0 && st.turn % 10 === 0) await delay(0);
+  }
 }
 
 var loopGuard = 0;
@@ -337,6 +359,7 @@ function transform(src) {
   code = code.replace(/\b(while|for)\s*\(([^)]*)\)\s*\{/g, "$1 ($2) { await __loop();");
   var names = [], m, re = /function\s+([A-Za-z_$][\w$]*)/g;
   while ((m = re.exec(src))) names.push(m[1]);
+  
   code = code.replace(/\bfunction\b/g, "async function");
   for (var i = 0; i < names.length; i++) {
     code = code.replace(new RegExp("(?<!function )\\b" + names[i] + "\\s*\\(", "g"), "await " + names[i] + "(");
@@ -353,7 +376,7 @@ function setRunBtn(isRunning) {
 
 async function run() {
   reset();
-  running = true; stopFlag = false; loopGuard = 0;
+  running = true; stopFlag = false; loopGuard = 0; prevHp = st.hero.hp;
   setRunBtn(true);
   addLog("=== 開始執行 ===", "sys");
   var api = makeApi();
@@ -377,7 +400,29 @@ async function run() {
 }
 
 document.getElementById("runbtn").addEventListener("click", function () {
-  if (running) { stopFlag = true; } else run();
+  if (running) { stopFlag = true; if (stepResolve) stepResolve(); }
+  else { paused = false; setPauseUi(); run(); }
+});
+document.getElementById("pausebtn").addEventListener("click", function () {
+  if (!running) return;
+  paused = !paused;
+  setPauseUi();
+  if (!paused && stepResolve) stepResolve();
+});
+document.getElementById("resetbtn").addEventListener("click", function () {
+  paused = false; setPauseUi();
+  if (running) {
+    stopFlag = true;
+    if (stepResolve) stepResolve();
+    var iv = setInterval(function () {
+      if (!running) { clearInterval(iv); reset(); }
+    }, 50);
+  } else reset();
+});
+document.getElementById("stepbtn").addEventListener("click", function () {
+  if (!running) { paused = true; setPauseUi(); run(); return; }
+  if (!paused) { paused = true; setPauseUi(); return; }
+  if (stepResolve) stepResolve();
 });
 document.getElementById("speedbtn").addEventListener("click", function () {
   speedIdx = (speedIdx + 1) % SPEEDS.length;
