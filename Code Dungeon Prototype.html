@@ -85,6 +85,7 @@ if (enemies.length > 0) {
       <span><i style="background:#534AB7"></i>毒沼 (-4HP)</span><span><i style="background:#1d1d1c"></i>暗 = 勇者視野外（API 拿不到）</span>
     </div>
     <div id="stats">回合 0 ・ 擊殺 0 ・ 受傷 0</div>
+    <div id="record" style="margin-top:4px;font-size:12px;color:#888780;"></div>
     <div id="log"></div>
   </div>
 </div>
@@ -111,6 +112,25 @@ var SPEEDS = [["1x", 300], ["4x", 90], ["16x", 25], ["MAX", 0]];
 var st, running = false, stopFlag = false, speedIdx = 0;
 var paused = false, stepResolve = null, prevHp = 0;
 var STOP = { __stop: true };
+
+var SAVE_KEY = "codeDungeonProtoV1";
+function loadSave() {
+  try { return JSON.parse(localStorage.getItem(SAVE_KEY)) || {}; } catch (e) { return {}; }
+}
+function save(patch) {
+  try {
+    var s = loadSave();
+    for (var k in patch) s[k] = patch[k];
+    localStorage.setItem(SAVE_KEY, JSON.stringify(s));
+  } catch (e) {}
+}
+function renderRecord() {
+  var s = loadSave(), el = document.getElementById("record");
+  if (!s.attempts) { el.textContent = "尚無挑戰紀錄"; return; }
+  var t = "挑戰 " + s.attempts + " 次 ・ 通關 " + (s.wins || 0) + " 次";
+  if (s.best) t += " ・ 最佳 " + s.best.turns + " 回合（受傷 " + s.best.dmg + "）";
+  el.textContent = t;
+}
 
 function setPauseUi() {
   document.getElementById("pausebtn").textContent = paused ? "▶ 繼續" : "⏸ 暫停";
@@ -254,6 +274,15 @@ function endRun(win) {
   document.getElementById("ovhint").textContent = win ? "試試看：能不能用更少回合、更少受傷通關？" : "死因：" + (st.lastHit || "未知") + " ── 改改程式再來一次";
   addLog(win ? "=== 通關！ ===" : "=== 死亡（死因：" + (st.lastHit || "未知") + "）===", win ? "good" : "bad");
   setRunBtn(false);
+  var s = loadSave();
+  s.attempts = (s.attempts || 0) + 1;
+  if (win) {
+    s.wins = (s.wins || 0) + 1;
+    if (!s.best || st.turn < s.best.turns) s.best = { turns: st.turn, dmg: st.dmgTaken };
+  }
+  s.lastLog = document.getElementById("log").innerHTML;
+  save(s);
+  renderRecord();
 }
 
 function delay(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
@@ -269,7 +298,7 @@ async function tick() {
   render();
   if (st.hero.hp <= 0) { endRun(false); throw STOP; }
   if (st.hero.x === st.stairs.x && st.hero.y === st.stairs.y) { endRun(true); throw STOP; }
-  if (stopFlag) { running = false; addLog("已手動停止", "sys"); setRunBtn(false); throw STOP; }
+  if (stopFlag) { running = false; addLog("已手動停止", "sys"); setRunBtn(false); save({ lastLog: document.getElementById("log").innerHTML }); throw STOP; }
   if (document.getElementById("autopause").checked && st.hero.hp < prevHp && !paused) {
     paused = true; setPauseUi();
     addLog("受傷，自動暫停（按「下一步」逐回合看，或按「繼續」）", "sys");
@@ -278,7 +307,7 @@ async function tick() {
   if (paused) {
     await new Promise(function (r) { stepResolve = r; });
     stepResolve = null;
-    if (stopFlag) { running = false; addLog("已手動停止", "sys"); setRunBtn(false); throw STOP; }
+    if (stopFlag) { running = false; addLog("已手動停止", "sys"); setRunBtn(false); save({ lastLog: document.getElementById("log").innerHTML }); throw STOP; }
   } else {
     await delay(SPEEDS[speedIdx][1]);
     if (SPEEDS[speedIdx][1] === 0 && st.turn % 10 === 0) await delay(0);
@@ -347,7 +376,7 @@ function makeApi() {
     log: function (msg) { addLog("你的 log：" + String(msg), "sys"); },
     __loop: async function () {
       loopGuard++;
-      if (stopFlag) { running = false; addLog("已手動停止", "sys"); setRunBtn(false); throw STOP; }
+      if (stopFlag) { running = false; addLog("已手動停止", "sys"); setRunBtn(false); save({ lastLog: document.getElementById("log").innerHTML }); throw STOP; }
       if (loopGuard > 50000) { addLog("偵測到無行動的無限迴圈（迴圈內要有 move/attack 等行動）", "bad"); throw STOP; }
       if (loopGuard % 2000 === 0) await delay(0);
     }
@@ -377,6 +406,7 @@ function setRunBtn(isRunning) {
 async function run() {
   reset();
   running = true; stopFlag = false; loopGuard = 0; prevHp = st.hero.hp;
+  save({ code: document.getElementById("editor").value });
   setRunBtn(true);
   addLog("=== 開始執行 ===", "sys");
   var api = makeApi();
@@ -438,6 +468,30 @@ document.getElementById("editor").addEventListener("keydown", function (e) {
 });
 
 reset();
+
+(function restore() {
+  try {
+    var s = loadSave();
+    var ed = document.getElementById("editor");
+    if (typeof s.code === "string" && s.code.length) ed.value = s.code;
+    var det = document.querySelector("details");
+    if (det) {
+      if (typeof s.apiOpen === "boolean") det.open = s.apiOpen;
+      det.addEventListener("toggle", function () { save({ apiOpen: det.open }); });
+    }
+    if (s.lastLog) {
+      var lg = document.getElementById("log");
+      lg.innerHTML = s.lastLog;
+      lg.scrollTop = lg.scrollHeight;
+    }
+    renderRecord();
+    var tmr = null;
+    ed.addEventListener("input", function () {
+      clearTimeout(tmr);
+      tmr = setTimeout(function () { save({ code: ed.value }); }, 300);
+    });
+  } catch (e) {}
+})();
 </script>
 </body>
 </html>
