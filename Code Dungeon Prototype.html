@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<title>Code Dungeon — Prototype v0</title>
+<style>
+  body { margin: 0; background: #161615; color: #D3D1C7; font-family: "Segoe UI", "Microsoft JhengHei", sans-serif; }
+  .topbar { display: flex; align-items: center; gap: 16px; padding: 10px 16px; border-bottom: 1px solid #333; flex-wrap: wrap; }
+  .topbar h1 { font-size: 15px; font-weight: 600; color: #F1EFE8; margin: 0; }
+  .hpwrap { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+  .bar { width: 100px; height: 9px; background: #333; border-radius: 4px; overflow: hidden; }
+  .bar > div { height: 100%; background: #E24B4A; transition: width 0.15s; }
+  button { background: transparent; color: #D3D1C7; border: 1px solid #555; border-radius: 5px; padding: 5px 14px; font-size: 13px; cursor: pointer; }
+  button:hover { background: #2a2a28; }
+  button.primary { background: #1D9E75; border-color: #1D9E75; color: #04342C; font-weight: 600; }
+  .main { display: flex; min-height: calc(100vh - 52px); }
+  .left { flex: 1; min-width: 320px; display: flex; flex-direction: column; border-right: 1px solid #333; }
+  #editor { flex: 1; background: #1c1c1b; color: #D3D1C7; border: none; outline: none; resize: none; padding: 12px 14px; font-family: Consolas, Menlo, monospace; font-size: 13px; line-height: 1.6; tab-size: 2; min-height: 320px; }
+  .right { width: 460px; flex: none; padding: 14px 16px; }
+  #mapwrap { position: relative; width: fit-content; }
+  #map { display: grid; grid-template-columns: repeat(12, 32px); }
+  .cell { width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; font-size: 17px; box-shadow: inset 0 0 0 0.5px #161615; }
+  #overlay { position: absolute; inset: 0; background: rgba(15,15,14,0.88); display: none; flex-direction: column; align-items: center; justify-content: center; gap: 8px; text-align: center; }
+  #overlay .big { font-size: 20px; font-weight: 700; }
+  .legend { display: flex; gap: 12px; margin-top: 8px; font-size: 11px; color: #888780; flex-wrap: wrap; }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+  #stats { margin-top: 8px; font-size: 12px; color: #B4B2A9; }
+  #log { margin-top: 10px; height: 220px; overflow-y: auto; background: #1c1c1b; border: 1px solid #333; border-radius: 6px; padding: 8px 10px; font-family: Consolas, Menlo, monospace; font-size: 12px; line-height: 1.7; }
+  #log .bad { color: #F09595; } #log .good { color: #9FE1CB; } #log .warn { color: #FAC775; } #log .sys { color: #888780; }
+  details { padding: 8px 14px; border-top: 1px solid #333; font-size: 12px; }
+  details code { color: #85B7EB; }
+  details td { padding: 2px 10px 2px 0; vertical-align: top; color: #B4B2A9; }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <h1>Code Dungeon <span style="color:#888780;font-weight:400;">prototype v0</span></h1>
+  <div class="hpwrap">HP <div class="bar"><div id="hpbar" style="width:100%"></div></div> <span id="hptext">50/50</span></div>
+  <div class="hpwrap">藥水 <span id="potiontext">0</span></div>
+  <button id="speedbtn">速度 1x</button>
+  <button id="runbtn" class="primary">▶ 執行</button>
+</div>
+
+<div class="main">
+  <div class="left">
+    <textarea id="editor" spellcheck="false">// 勇者行為腳本 — 修改後按「執行」
+// 腳本跑完會自動從頭再執行，直到死亡或通關
+// 提示：這份初始腳本大概會死，想想為什麼，然後改進它
+
+var enemies = getEnemies();
+if (enemies.length > 0) {
+  var t = nearest(enemies);
+  if (distance(t) <= 1) attack(t);
+  else moveToward(t);
+} else {
+  explore();
+}</textarea>
+    <details>
+      <summary>API 參考（v0，共 13 個）</summary>
+      <table>
+        <tr><td><code>alive()</code></td><td>是否存活（寫明確迴圈時用，非必要）</td><td><code>move(dir)</code></td><td>朝 "up/down/left/right" 走一步</td></tr>
+        <tr><td><code>hp()</code></td><td>目前生命值</td><td><code>moveToward(t)</code></td><td>朝目標走一步（會穿毒沼，不會繞）</td></tr>
+        <tr><td><code>hasPotion()</code></td><td>身上是否有藥水</td><td><code>attack(t)</code></td><td>攻擊相鄰目標（射程 1）</td></tr>
+        <tr><td><code>getEnemies()</code></td><td>視野內敵人 [{x,y,hp,type}]</td><td><code>drinkPotion()</code></td><td>喝藥水，回 30 HP</td></tr>
+        <tr><td><code>getItems()</code></td><td>已看見的道具（走上去自動撿）</td><td><code>explore()</code></td><td>朝最近的未探索區走一步（探完則走向樓梯）</td></tr>
+        <tr><td><code>getStairs()</code></td><td>樓梯位置，沒看過回傳 null</td><td><code>distance(t)</code></td><td>與目標的曼哈頓距離</td></tr>
+        <tr><td><code>nearest(list)</code></td><td>清單中最近的一個</td><td></td><td>行動類每呼叫一次 = 一回合，敵人也會動；腳本跑完自動從頭執行（頂層變數會重置）</td></tr>
+      </table>
+    </details>
+  </div>
+
+  <div class="right">
+    <div id="mapwrap">
+      <div id="map"></div>
+      <div id="overlay"><div class="big" id="ovtitle"></div><div id="ovstats" style="font-size:13px;color:#B4B2A9;"></div><div style="font-size:12px;color:#888780;" id="ovhint"></div></div>
+    </div>
+    <div class="legend">
+      <span><i style="background:#5DCAA5"></i>勇者</span><span><i style="background:#F0997B"></i>敵人</span>
+      <span><i style="background:#FAC775"></i>藥水</span><span><i style="background:#85B7EB"></i>樓梯</span>
+      <span><i style="background:#534AB7"></i>毒沼 (-4HP)</span><span><i style="background:#252524"></i>未探索</span>
+    </div>
+    <div id="stats">回合 0 ・ 擊殺 0 ・ 受傷 0</div>
+    <div id="log"></div>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+var MAPSRC = [
+  "############",
+  "#......#...#",
+  "#.h.s..#.g.#",
+  "#......+...#",
+  "###.####.###",
+  "#...~~~....#",
+  "#.!.~~~.g..#",
+  "#..~~~.>...#",
+  "############"
+];
+var W = 12, H = 9;
+var ENEMY_DEF = { s: { type: "slime", hp: 10, atk: 3 }, g: { type: "goblin", hp: 18, atk: 5 } };
+var HERO_MAXHP = 50, HERO_ATK = 6, POTION_HEAL = 30, POISON_DMG = 4, SIGHT = 3;
+var SPEEDS = [["1x", 300], ["4x", 90], ["16x", 25], ["MAX", 0]];
+
+var st, running = false, stopFlag = false, speedIdx = 0;
+var STOP = { __stop: true };
+
+function key(x, y) { return x + "," + y; }
+function isWall(x, y) { return x < 0 || y < 0 || x >= W || y >= H || MAPSRC[y][x] === "#"; }
+function isPoison(x, y) { return MAPSRC[y][x] === "~"; }
+function manh(ax, ay, bx, by) { return Math.abs(ax - bx) + Math.abs(ay - by); }
+
+function reset() {
+  st = { hero: { x: 0, y: 0, hp: HERO_MAXHP, potions: 0 }, enemies: [], items: [], stairs: null,
+         seen: {}, turn: 0, kills: 0, dmgTaken: 0, lastHit: null, exploreDone: false };
+  var id = 0;
+  for (var y = 0; y < H; y++) for (var x = 0; x < W; x++) {
+    var c = MAPSRC[y][x];
+    if (c === "h") { st.hero.x = x; st.hero.y = y; }
+    else if (ENEMY_DEF[c]) { var d = ENEMY_DEF[c]; st.enemies.push({ id: id++, x: x, y: y, hp: d.hp, maxhp: d.hp, atk: d.atk, type: d.type }); }
+    else if (c === "!") st.items.push({ x: x, y: y, type: "potion" });
+    else if (c === ">") st.stairs = { x: x, y: y };
+  }
+  reveal();
+  document.getElementById("log").innerHTML = "";
+  document.getElementById("overlay").style.display = "none";
+  render();
+}
+
+function reveal() {
+  var dist = {}; dist[key(st.hero.x, st.hero.y)] = 0;
+  var q = [[st.hero.x, st.hero.y]];
+  while (q.length) {
+    var c = q.shift(), d = dist[key(c[0], c[1])];
+    if (d >= 5) continue;
+    var dirs = [[0, -1], [0, 1], [-1, 0], [1, 0]];
+    for (var i = 0; i < 4; i++) {
+      var nx = c[0] + dirs[i][0], ny = c[1] + dirs[i][1];
+      if (nx < 0 || ny < 0 || nx >= W || ny >= H || key(nx, ny) in dist) continue;
+      dist[key(nx, ny)] = d + 1;
+      if (!isWall(nx, ny)) q.push([nx, ny]);
+    }
+  }
+  st.dist = dist;
+  for (var k in dist) if (dist[k] <= SIGHT) st.seen[k] = true;
+}
+function visibleNow(x, y) { var d = st.dist[key(x, y)]; return d !== undefined && d <= SIGHT; }
+
+function addLog(msg, cls) {
+  var el = document.getElementById("log");
+  var line = document.createElement("div");
+  if (cls) line.className = cls;
+  line.textContent = "[T" + st.turn + "] " + msg;
+  el.appendChild(line);
+  while (el.children.length > 300) el.removeChild(el.firstChild);
+  el.scrollTop = el.scrollHeight;
+}
+
+function render() {
+  var html = "";
+  for (var y = 0; y < H; y++) for (var x = 0; x < W; x++) {
+    var bg = "#252524", txt = "";
+    if (st.seen[key(x, y)]) {
+      var c = MAPSRC[y][x];
+      bg = c === "#" ? "#0f0f0e" : isPoison(x, y) ? "#3C3489" : "#3a3a37";
+      if (st.stairs && st.stairs.x === x && st.stairs.y === y) { bg = "#85B7EB"; txt = "▼"; }
+      for (var i = 0; i < st.items.length; i++) if (st.items[i].x === x && st.items[i].y === y) { bg = "#FAC775"; txt = "♥"; }
+      for (var j = 0; j < st.enemies.length; j++) {
+        var e = st.enemies[j];
+        if (e.x === x && e.y === y && visibleNow(x, y)) { bg = "#F0997B"; txt = e.type === "slime" ? "s" : "g"; }
+      }
+      if (st.hero.x === x && st.hero.y === y) { bg = "#5DCAA5"; txt = "@"; }
+    }
+    html += '<div class="cell" style="background:' + bg + ';color:#161615;font-weight:700;">' + txt + "</div>";
+  }
+  document.getElementById("map").innerHTML = html;
+  var h = st.hero;
+  document.getElementById("hpbar").style.width = Math.max(0, h.hp / HERO_MAXHP * 100) + "%";
+  document.getElementById("hptext").textContent = Math.max(0, h.hp) + "/" + HERO_MAXHP;
+  document.getElementById("potiontext").textContent = h.potions;
+  document.getElementById("stats").textContent = "回合 " + st.turn + " ・ 擊殺 " + st.kills + " ・ 受傷 " + st.dmgTaken;
+}
+
+function bfs(sx, sy, goal) {
+  var prev = {}, q = [[sx, sy]], found = null;
+  prev[key(sx, sy)] = null;
+  while (q.length) {
+    var cur = q.shift();
+    if (goal(cur[0], cur[1]) && !(cur[0] === sx && cur[1] === sy)) { found = cur; break; }
+    var dirs = [[0, -1], [0, 1], [-1, 0], [1, 0]];
+    for (var i = 0; i < 4; i++) {
+      var nx = cur[0] + dirs[i][0], ny = cur[1] + dirs[i][1];
+      if (!isWall(nx, ny) && !(key(nx, ny) in prev)) { prev[key(nx, ny)] = cur; q.push([nx, ny]); }
+    }
+  }
+  if (!found) return null;
+  var path = [], node = found;
+  while (prev[key(node[0], node[1])]) { path.unshift(node); node = prev[key(node[0], node[1])]; }
+  return path;
+}
+
+function enemyAt(x, y) {
+  for (var i = 0; i < st.enemies.length; i++) if (st.enemies[i].x === x && st.enemies[i].y === y) return st.enemies[i];
+  return null;
+}
+
+function heroStep(nx, ny) {
+  if (isWall(nx, ny)) { addLog("撞牆了，浪費一回合", "warn"); return; }
+  if (enemyAt(nx, ny)) { addLog("被 " + enemyAt(nx, ny).type + " 擋住了", "warn"); return; }
+  st.hero.x = nx; st.hero.y = ny;
+  for (var i = st.items.length - 1; i >= 0; i--) {
+    if (st.items[i].x === nx && st.items[i].y === ny) { st.hero.potions++; st.items.splice(i, 1); addLog("撿到藥水！", "good"); }
+  }
+  if (isPoison(nx, ny)) { st.hero.hp -= POISON_DMG; st.dmgTaken += POISON_DMG; st.lastHit = "毒沼"; addLog("踩到毒沼 -" + POISON_DMG + " HP", "bad"); }
+}
+
+function enemyTurn() {
+  for (var i = 0; i < st.enemies.length; i++) {
+    var e = st.enemies[i], h = st.hero;
+    var d = manh(e.x, e.y, h.x, h.y);
+    var walkDist = st.dist[key(e.x, e.y)];
+    if (d === 1) {
+      h.hp -= e.atk; st.dmgTaken += e.atk; st.lastHit = e.type;
+      addLog(e.type + " 攻擊你 -" + e.atk + " HP", "bad");
+    } else if (walkDist !== undefined && walkDist <= 5) {
+      var dx = h.x - e.x, dy = h.y - e.y;
+      var tries = Math.abs(dx) >= Math.abs(dy)
+        ? [[e.x + Math.sign(dx), e.y], [e.x, e.y + Math.sign(dy)]]
+        : [[e.x, e.y + Math.sign(dy)], [e.x + Math.sign(dx), e.y]];
+      for (var t = 0; t < tries.length; t++) {
+        var nx = tries[t][0], ny = tries[t][1];
+        if (!isWall(nx, ny) && !enemyAt(nx, ny) && !(nx === h.x && ny === h.y) && !(nx === e.x && ny === e.y)) { e.x = nx; e.y = ny; break; }
+      }
+    }
+  }
+}
+
+function endRun(win) {
+  running = false;
+  var ov = document.getElementById("overlay");
+  ov.style.display = "flex";
+  document.getElementById("ovtitle").textContent = win ? "通關！" : "你死了";
+  document.getElementById("ovtitle").style.color = win ? "#5DCAA5" : "#F09595";
+  document.getElementById("ovstats").textContent = "回合 " + st.turn + " ・ 擊殺 " + st.kills + " ・ 共受到 " + st.dmgTaken + " 點傷害";
+  document.getElementById("ovhint").textContent = win ? "試試看：能不能用更少回合、更少受傷通關？" : "死因：" + (st.lastHit || "未知") + " ── 改改程式再來一次";
+  addLog(win ? "=== 通關！ ===" : "=== 死亡（死因：" + (st.lastHit || "未知") + "）===", win ? "good" : "bad");
+  setRunBtn(false);
+}
+
+function delay(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+
+async function tick() {
+  st.turn++;
+  enemyTurn();
+  reveal();
+  render();
+  if (st.hero.hp <= 0) { endRun(false); throw STOP; }
+  if (st.hero.x === st.stairs.x && st.hero.y === st.stairs.y) { endRun(true); throw STOP; }
+  if (stopFlag) { running = false; addLog("已手動停止", "sys"); setRunBtn(false); throw STOP; }
+  await delay(SPEEDS[speedIdx][1]);
+  if (SPEEDS[speedIdx][1] === 0 && st.turn % 10 === 0) await delay(0);
+}
+
+var loopGuard = 0;
+function makeApi() {
+  var snap = function (e) { return { id: e.id, x: e.x, y: e.y, hp: e.hp, type: e.type }; };
+  return {
+    alive: function () { return st.hero.hp > 0; },
+    hp: function () { return st.hero.hp; },
+    hasPotion: function () { return st.hero.potions > 0; },
+    getEnemies: function () { return st.enemies.filter(function (e) { return visibleNow(e.x, e.y); }).map(snap); },
+    getItems: function () { return st.items.filter(function (i) { return st.seen[key(i.x, i.y)]; }).map(function (i) { return { x: i.x, y: i.y, type: i.type }; }); },
+    getStairs: function () { return st.seen[key(st.stairs.x, st.stairs.y)] ? { x: st.stairs.x, y: st.stairs.y } : null; },
+    distance: function (t) { return manh(st.hero.x, st.hero.y, t.x, t.y); },
+    nearest: function (list) {
+      var best = null, bd = Infinity;
+      for (var i = 0; i < list.length; i++) { var d = manh(st.hero.x, st.hero.y, list[i].x, list[i].y); if (d < bd) { bd = d; best = list[i]; } }
+      return best;
+    },
+    move: async function (dir) {
+      loopGuard = 0;
+      var d = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] }[dir];
+      if (!d) { addLog('move() 方向要是 "up/down/left/right"', "warn"); } else heroStep(st.hero.x + d[0], st.hero.y + d[1]);
+      await tick();
+    },
+    moveToward: async function (t) {
+      loopGuard = 0;
+      if (!t || typeof t.x !== "number") { addLog("moveToward() 需要一個有 x, y 的目標", "warn"); await tick(); return; }
+      var path = bfs(st.hero.x, st.hero.y, function (x, y) { return x === t.x && y === t.y; });
+      if (!path) addLog("走不到那裡，浪費一回合", "warn");
+      else heroStep(path[0][0], path[0][1]);
+      await tick();
+    },
+    attack: async function (t) {
+      loopGuard = 0;
+      var e = t ? st.enemies.filter(function (en) { return en.id === t.id; })[0] : null;
+      if (!e) addLog("目標已不存在，浪費一回合", "warn");
+      else if (manh(st.hero.x, st.hero.y, e.x, e.y) > 1) addLog("目標太遠打不到（射程 1），浪費一回合", "warn");
+      else {
+        e.hp -= HERO_ATK;
+        if (e.hp <= 0) { st.enemies.splice(st.enemies.indexOf(e), 1); st.kills++; addLog("擊殺 " + e.type + "！", "good"); }
+        else addLog("攻擊 " + e.type + " -" + HERO_ATK + "（剩 " + e.hp + "）");
+      }
+      await tick();
+    },
+    drinkPotion: async function () {
+      loopGuard = 0;
+      if (st.hero.potions > 0) { st.hero.potions--; st.hero.hp = Math.min(HERO_MAXHP, st.hero.hp + POTION_HEAL); addLog("喝藥水 +" + POTION_HEAL + " HP", "good"); }
+      else addLog("沒有藥水！浪費一回合", "warn");
+      await tick();
+    },
+    explore: async function () {
+      loopGuard = 0;
+      var path = bfs(st.hero.x, st.hero.y, function (x, y) { return !st.seen[key(x, y)] && !isWall(x, y); });
+      if (!path) {
+        if (!st.exploreDone) { addLog("已無可探索的區域，朝樓梯前進", "sys"); st.exploreDone = true; }
+        var p2 = bfs(st.hero.x, st.hero.y, function (x, y) { return x === st.stairs.x && y === st.stairs.y; });
+        if (p2) heroStep(p2[0][0], p2[0][1]);
+      }
+      else heroStep(path[0][0], path[0][1]);
+      await tick();
+    },
+    log: function (msg) { addLog("你的 log：" + String(msg), "sys"); },
+    __loop: async function () {
+      loopGuard++;
+      if (stopFlag) { running = false; addLog("已手動停止", "sys"); setRunBtn(false); throw STOP; }
+      if (loopGuard > 50000) { addLog("偵測到無行動的無限迴圈（迴圈內要有 move/attack 等行動）", "bad"); throw STOP; }
+      if (loopGuard % 2000 === 0) await delay(0);
+    }
+  };
+}
+
+function transform(src) {
+  var code = src.replace(/\b(moveToward|move|attack|drinkPotion|explore)\s*\(/g, "await $1(");
+  code = code.replace(/\b(while|for)\s*\(([^)]*)\)\s*\{/g, "$1 ($2) { await __loop();");
+  var names = [], m, re = /function\s+([A-Za-z_$][\w$]*)/g;
+  while ((m = re.exec(src))) names.push(m[1]);
+  code = code.replace(/\bfunction\b/g, "async function");
+  for (var i = 0; i < names.length; i++) {
+    code = code.replace(new RegExp("(?<!function )\\b" + names[i] + "\\s*\\(", "g"), "await " + names[i] + "(");
+  }
+  return code;
+}
+
+function setRunBtn(isRunning) {
+  var b = document.getElementById("runbtn");
+  b.textContent = isRunning ? "■ 停止" : "▶ 執行";
+  b.style.background = isRunning ? "#A32D2D" : "#1D9E75";
+  b.style.borderColor = b.style.background;
+}
+
+async function run() {
+  reset();
+  running = true; stopFlag = false; loopGuard = 0;
+  setRunBtn(true);
+  addLog("=== 開始執行 ===", "sys");
+  var api = makeApi();
+  try {
+    var code = transform(document.getElementById("editor").value);
+    var keys = Object.keys(api);
+    var factory = new Function(keys.join(","), "return (async function(){\n" + code + "\n});");
+    var program = factory.apply(null, keys.map(function (k) { return api[k]; }));
+    while (running && !stopFlag) {
+      var before = st.turn;
+      await program();
+      loopGuard = 0;
+      if (st.turn === before) { addLog("腳本跑完一輪但沒有執行任何行動，已停止（至少要呼叫一個行動函式）", "warn"); break; }
+    }
+    if (running) { running = false; setRunBtn(false); }
+  } catch (err) {
+    if (err === STOP) return;
+    addLog("程式錯誤：" + (err && err.message ? err.message : String(err)), "bad");
+    running = false; setRunBtn(false);
+  }
+}
+
+document.getElementById("runbtn").addEventListener("click", function () {
+  if (running) { stopFlag = true; } else run();
+});
+document.getElementById("speedbtn").addEventListener("click", function () {
+  speedIdx = (speedIdx + 1) % SPEEDS.length;
+  document.getElementById("speedbtn").textContent = "速度 " + SPEEDS[speedIdx][0];
+});
+document.getElementById("editor").addEventListener("keydown", function (e) {
+  if (e.key === "Tab") {
+    e.preventDefault();
+    var t = e.target, s = t.selectionStart;
+    t.value = t.value.slice(0, s) + "  " + t.value.slice(t.selectionEnd);
+    t.selectionStart = t.selectionEnd = s + 2;
+  }
+});
+
+reset();
+</script>
+</body>
+</html>
