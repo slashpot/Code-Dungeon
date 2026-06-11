@@ -99,6 +99,11 @@ if (enemies.length > 0) {
 <script>
 "use strict";
 
+/* ============================================================
+ * 1) 關卡資料 — 新增關卡只要加一個 {name, hint, map} 物件
+ *    圖例：# 牆 ｜ ~ 毒沼 ｜ ! 藥水 ｜ > 樓梯 ｜ h 勇者出生點
+ *          s/g/B 敵人（數值見 ENEMY_DEF）
+ * ============================================================ */
 var LEVELS = [
   { name: "初戰走廊", hint: "基礎：移動與攻擊", map: [
     "############",
@@ -146,38 +151,84 @@ var LEVELS = [
     "############"
   ]}
 ];
-var MAPSRC, W, H;
+
+/* ============================================================
+ * 2) 平衡常數 — 所有數值調整都在這一區
+ * ============================================================ */
 var ENEMY_DEF = {
   s: { type: "slime", hp: 10, atk: 3 },
   g: { type: "goblin", hp: 18, atk: 5 },
   B: { type: "orc-boss", hp: 32, atk: 7 }
 };
-var HERO_MAXHP = 50, HERO_ATK = 6, POTION_HEAL = 30, POISON_DMG = 4, SIGHT = 3;
+var HERO_MAXHP = 50;
+var HERO_ATK = 6;
+var POTION_HEAL = 30;
+var POISON_DMG = 4;           // 回合結束時站在毒沼上的傷害
+var SIGHT = 3;                // 勇者視野：BFS 走行距離（牆會擋視線）
+var AGGRO_RANGE = 5;          // 敵人追擊範圍：BFS 走行距離（隔牆不會仇恨）
+var LOOP_GUARD_LIMIT = 50000; // 玩家迴圈連續「無行動」的次數上限
+var LOG_LIMIT = 300;          // log 保留行數
 var SPEEDS = [["1x", 300], ["4x", 90], ["16x", 25], ["MAX", 0]];
 
-var st, running = false, stopFlag = false, speedIdx = 0;
-var paused = false, stepResolve = null, prevHp = 0;
-var STOP = { __stop: true };
-
-var SAVE_KEY = "codeDungeonProtoV2";
+/* ============================================================
+ * 3) 全域狀態
+ * ============================================================ */
+var MAPSRC, W, H;            // 目前關卡的地圖與尺寸（loadLevel 設定）
 var curLevel = 0;
+var state;                   // 單局狀態，reset() 重建，結構見 reset()
+var running = false;         // 玩家程式執行中
+var stopFlag = false;        // 要求停止（下一個 tick 生效）
+var paused = false;          // 逐步執行：暫停中
+var stepResolve = null;      // 暫停時 tick 等待的 resolve 函式
+var speedIdx = 0;
+var prevHp = 0;              // 上個 tick 的 HP（受傷自動暫停用）
+var loopGuard = 0;           // 連續無行動計數
+var STOP = { __stop: true }; // 內部訊號：中止玩家程式（非錯誤）
 
-function unlockedCount() { return loadSave().unlocked || 1; }
-function updateLvBtns() {
-  document.getElementById("prevlv").disabled = curLevel === 0;
-  document.getElementById("nextlv").disabled = curLevel >= unlockedCount() - 1 || curLevel >= LEVELS.length - 1;
+/* ============================================================
+ * 4) 地圖工具
+ * ============================================================ */
+function posKey(x, y) { return x + "," + y; }
+function isWall(x, y) { return x < 0 || y < 0 || x >= W || y >= H || MAPSRC[y][x] === "#"; }
+function isPoison(x, y) { return MAPSRC[y][x] === "~"; }
+function manhattan(ax, ay, bx, by) { return Math.abs(ax - bx) + Math.abs(ay - by); }
+
+function enemyAt(x, y) {
+  for (var i = 0; i < state.enemies.length; i++) {
+    if (state.enemies[i].x === x && state.enemies[i].y === y) return state.enemies[i];
+  }
+  return null;
 }
-function loadLevel(i) {
-  curLevel = Math.max(0, Math.min(LEVELS.length - 1, i));
-  MAPSRC = LEVELS[curLevel].map;
-  H = MAPSRC.length; W = MAPSRC[0].length;
-  document.getElementById("map").style.gridTemplateColumns = "repeat(" + W + ", 32px)";
-  document.getElementById("lvname").textContent = (curLevel + 1) + "/" + LEVELS.length + " " + LEVELS[curLevel].name;
-  save({ cur: curLevel });
-  reset();
-  renderRecord();
-  updateLvBtns();
+function enemyBlocked(x, y) { return !!enemyAt(x, y); }
+
+// BFS 最短路徑。goal(x,y) 判定目標；blocked(x,y)（可選）為臨時障礙（如敵人），
+// 但目標格本身不受 blocked 影響。回傳「下一步起」的路徑陣列；到不了回傳 null。
+function bfs(sx, sy, goal, blocked) {
+  var prev = {}, q = [[sx, sy]], found = null;
+  prev[posKey(sx, sy)] = null;
+  while (q.length) {
+    var cur = q.shift();
+    if (goal(cur[0], cur[1]) && !(cur[0] === sx && cur[1] === sy)) { found = cur; break; }
+    var dirs = [[0, -1], [0, 1], [-1, 0], [1, 0]];
+    for (var i = 0; i < 4; i++) {
+      var nx = cur[0] + dirs[i][0], ny = cur[1] + dirs[i][1];
+      if (isWall(nx, ny) || (posKey(nx, ny) in prev)) continue;
+      if (blocked && blocked(nx, ny) && !goal(nx, ny)) continue;
+      prev[posKey(nx, ny)] = cur; q.push([nx, ny]);
+    }
+  }
+  if (!found) return null;
+  var path = [], node = found;
+  while (prev[posKey(node[0], node[1])]) { path.unshift(node); node = prev[posKey(node[0], node[1])]; }
+  return path;
 }
+
+/* ============================================================
+ * 5) 存檔（localStorage）
+ *    結構：{ code, apiOpen, cur, unlocked, lastLog,
+ *            levels: { 關卡索引: {attempts, wins, best} } }
+ * ============================================================ */
+var SAVE_KEY = "codeDungeonProtoV2";
 function loadSave() {
   try { return JSON.parse(localStorage.getItem(SAVE_KEY)) || {}; } catch (e) { return {}; }
 }
@@ -188,34 +239,29 @@ function save(patch) {
     localStorage.setItem(SAVE_KEY, JSON.stringify(s));
   } catch (e) {}
 }
-function renderRecord() {
-  var s = loadSave(), el = document.getElementById("record");
-  var rec = (s.levels || {})[curLevel];
-  if (!rec || !rec.attempts) { el.textContent = "本關尚無挑戰紀錄"; return; }
-  var t = "本關挑戰 " + rec.attempts + " 次 ・ 通關 " + (rec.wins || 0) + " 次";
-  if (rec.best) t += " ・ 最佳 " + rec.best.turns + " 回合（受傷 " + rec.best.dmg + "）";
-  el.textContent = t;
-}
+function unlockedCount() { return loadSave().unlocked || 1; }
 
-function setPauseUi() {
-  document.getElementById("pausebtn").textContent = paused ? "▶ 繼續" : "⏸ 暫停";
-}
-
-function key(x, y) { return x + "," + y; }
-function isWall(x, y) { return x < 0 || y < 0 || x >= W || y >= H || MAPSRC[y][x] === "#"; }
-function isPoison(x, y) { return MAPSRC[y][x] === "~"; }
-function manh(ax, ay, bx, by) { return Math.abs(ax - bx) + Math.abs(ay - by); }
-
+/* ============================================================
+ * 6) 引擎核心 — 回合推進、敵人 AI、輸贏判定
+ * ============================================================ */
 function reset() {
-  st = { hero: { x: 0, y: 0, hp: HERO_MAXHP, potions: 0 }, enemies: [], items: [], stairs: null,
-         seen: {}, turn: 0, kills: 0, dmgTaken: 0, lastHit: null, exploreDone: false };
+  state = {
+    hero: { x: 0, y: 0, hp: HERO_MAXHP, potions: 0 },
+    enemies: [],   // {id, x, y, hp, maxhp, atk, type, ch}
+    items: [],     // {x, y, type}
+    stairs: null,  // {x, y}
+    seen: {},      // posKey -> true（勇者看過的格子，API 用）
+    dist: {},      // posKey -> 與勇者的 BFS 距離（reveal 更新）
+    turn: 0, kills: 0, dmgTaken: 0,
+    lastHit: null, exploreDone: false
+  };
   var id = 0;
   for (var y = 0; y < H; y++) for (var x = 0; x < W; x++) {
     var c = MAPSRC[y][x];
-    if (c === "h") { st.hero.x = x; st.hero.y = y; }
-    else if (ENEMY_DEF[c]) { var d = ENEMY_DEF[c]; st.enemies.push({ id: id++, x: x, y: y, hp: d.hp, maxhp: d.hp, atk: d.atk, type: d.type, ch: c }); }
-    else if (c === "!") st.items.push({ x: x, y: y, type: "potion" });
-    else if (c === ">") st.stairs = { x: x, y: y };
+    if (c === "h") { state.hero.x = x; state.hero.y = y; }
+    else if (ENEMY_DEF[c]) { var d = ENEMY_DEF[c]; state.enemies.push({ id: id++, x: x, y: y, hp: d.hp, maxhp: d.hp, atk: d.atk, type: d.type, ch: c }); }
+    else if (c === "!") state.items.push({ x: x, y: y, type: "potion" });
+    else if (c === ">") state.stairs = { x: x, y: y };
   }
   reveal();
   document.getElementById("log").innerHTML = "";
@@ -224,102 +270,48 @@ function reset() {
   addLog("第 " + (curLevel + 1) + " 關「" + LEVELS[curLevel].name + "」：" + LEVELS[curLevel].hint, "sys");
 }
 
+// 從勇者位置做 BFS，更新「與勇者的走行距離」表；SIGHT 內標記為已看過。牆會擋視線。
 function reveal() {
-  var dist = {}; dist[key(st.hero.x, st.hero.y)] = 0;
-  var q = [[st.hero.x, st.hero.y]];
+  var dist = {}; dist[posKey(state.hero.x, state.hero.y)] = 0;
+  var q = [[state.hero.x, state.hero.y]];
   while (q.length) {
-    var c = q.shift(), d = dist[key(c[0], c[1])];
-    if (d >= 5) continue;
+    var c = q.shift(), d = dist[posKey(c[0], c[1])];
+    if (d >= AGGRO_RANGE) continue;
     var dirs = [[0, -1], [0, 1], [-1, 0], [1, 0]];
     for (var i = 0; i < 4; i++) {
       var nx = c[0] + dirs[i][0], ny = c[1] + dirs[i][1];
-      if (nx < 0 || ny < 0 || nx >= W || ny >= H || key(nx, ny) in dist) continue;
-      dist[key(nx, ny)] = d + 1;
+      if (nx < 0 || ny < 0 || nx >= W || ny >= H || posKey(nx, ny) in dist) continue;
+      dist[posKey(nx, ny)] = d + 1;
       if (!isWall(nx, ny)) q.push([nx, ny]);
     }
   }
-  st.dist = dist;
-  for (var k in dist) if (dist[k] <= SIGHT) st.seen[k] = true;
+  state.dist = dist;
+  for (var k in dist) if (dist[k] <= SIGHT) state.seen[k] = true;
 }
-function visibleNow(x, y) { var d = st.dist[key(x, y)]; return d !== undefined && d <= SIGHT; }
+function visibleNow(x, y) { var d = state.dist[posKey(x, y)]; return d !== undefined && d <= SIGHT; }
 
-function addLog(msg, cls) {
-  var el = document.getElementById("log");
-  var line = document.createElement("div");
-  if (cls) line.className = cls;
-  line.textContent = "[T" + st.turn + "] " + msg;
-  el.appendChild(line);
-  while (el.children.length > 300) el.removeChild(el.firstChild);
-  el.scrollTop = el.scrollHeight;
-}
-
-function render() {
-  var html = "";
-  for (var y = 0; y < H; y++) for (var x = 0; x < W; x++) {
-    var c = MAPSRC[y][x], txt = "";
-    var bg = c === "#" ? "#0f0f0e" : isPoison(x, y) ? "#3C3489" : "#3a3a37";
-    if (st.stairs && st.stairs.x === x && st.stairs.y === y) { bg = "#85B7EB"; txt = "▼"; }
-    for (var i = 0; i < st.items.length; i++) if (st.items[i].x === x && st.items[i].y === y) { bg = "#FAC775"; txt = "♥"; }
-    for (var j = 0; j < st.enemies.length; j++) {
-      var e = st.enemies[j];
-      if (e.x === x && e.y === y) { bg = e.ch === "B" ? "#D85A30" : "#F0997B"; txt = e.ch; }
-    }
-    if (st.hero.x === x && st.hero.y === y) { bg = "#5DCAA5"; txt = "@"; }
-    var dim = visibleNow(x, y) ? "" : "filter:brightness(0.45);";
-    html += '<div class="cell" style="background:' + bg + ';color:#161615;font-weight:700;' + dim + '">' + txt + "</div>";
-  }
-  document.getElementById("map").innerHTML = html;
-  var h = st.hero;
-  document.getElementById("hpbar").style.width = Math.max(0, h.hp / HERO_MAXHP * 100) + "%";
-  document.getElementById("hptext").textContent = Math.max(0, h.hp) + "/" + HERO_MAXHP;
-  document.getElementById("potiontext").textContent = h.potions;
-  document.getElementById("stats").textContent = "回合 " + st.turn + " ・ 擊殺 " + st.kills + " ・ 受傷 " + st.dmgTaken;
-}
-
-function bfs(sx, sy, goal, blocked) {
-  var prev = {}, q = [[sx, sy]], found = null;
-  prev[key(sx, sy)] = null;
-  while (q.length) {
-    var cur = q.shift();
-    if (goal(cur[0], cur[1]) && !(cur[0] === sx && cur[1] === sy)) { found = cur; break; }
-    var dirs = [[0, -1], [0, 1], [-1, 0], [1, 0]];
-    for (var i = 0; i < 4; i++) {
-      var nx = cur[0] + dirs[i][0], ny = cur[1] + dirs[i][1];
-      if (isWall(nx, ny) || (key(nx, ny) in prev)) continue;
-      if (blocked && blocked(nx, ny) && !goal(nx, ny)) continue;
-      prev[key(nx, ny)] = cur; q.push([nx, ny]);
-    }
-  }
-  if (!found) return null;
-  var path = [], node = found;
-  while (prev[key(node[0], node[1])]) { path.unshift(node); node = prev[key(node[0], node[1])]; }
-  return path;
-}
-function enemyBlocked(x, y) { return !!enemyAt(x, y); }
-
-function enemyAt(x, y) {
-  for (var i = 0; i < st.enemies.length; i++) if (st.enemies[i].x === x && st.enemies[i].y === y) return st.enemies[i];
-  return null;
-}
-
+// 勇者走一步：撞牆/撞敵人 = 浪費回合；走到道具上自動撿取。
 function heroStep(nx, ny) {
   if (isWall(nx, ny)) { addLog("撞牆了，浪費一回合", "warn"); return; }
   if (enemyAt(nx, ny)) { addLog("被 " + enemyAt(nx, ny).type + " 擋住了", "warn"); return; }
-  st.hero.x = nx; st.hero.y = ny;
-  for (var i = st.items.length - 1; i >= 0; i--) {
-    if (st.items[i].x === nx && st.items[i].y === ny) { st.hero.potions++; st.items.splice(i, 1); addLog("撿到藥水！", "good"); }
+  state.hero.x = nx; state.hero.y = ny;
+  for (var i = state.items.length - 1; i >= 0; i--) {
+    if (state.items[i].x === nx && state.items[i].y === ny) {
+      state.hero.potions++; state.items.splice(i, 1); addLog("撿到藥水！", "good");
+    }
   }
 }
 
+// 敵人 AI：相鄰就攻擊；走行距離 ≤ AGGRO_RANGE 就朝勇者逼近（簡單貪婪步，不繞路）。
 function enemyTurn() {
-  for (var i = 0; i < st.enemies.length; i++) {
-    var e = st.enemies[i], h = st.hero;
-    var d = manh(e.x, e.y, h.x, h.y);
-    var walkDist = st.dist[key(e.x, e.y)];
+  for (var i = 0; i < state.enemies.length; i++) {
+    var e = state.enemies[i], h = state.hero;
+    var d = manhattan(e.x, e.y, h.x, h.y);
+    var walkDist = state.dist[posKey(e.x, e.y)];
     if (d === 1) {
-      h.hp -= e.atk; st.dmgTaken += e.atk; st.lastHit = e.type;
+      h.hp -= e.atk; state.dmgTaken += e.atk; state.lastHit = e.type;
       addLog(e.type + " 攻擊你 -" + e.atk + " HP", "bad");
-    } else if (walkDist !== undefined && walkDist <= 5) {
+    } else if (walkDist !== undefined && walkDist <= AGGRO_RANGE) {
       var dx = h.x - e.x, dy = h.y - e.y;
       var tries = Math.abs(dx) >= Math.abs(dy)
         ? [[e.x + Math.sign(dx), e.y], [e.x, e.y + Math.sign(dy)]]
@@ -332,6 +324,36 @@ function enemyTurn() {
   }
 }
 
+function delay(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+
+// 一回合 = 一次行動函式呼叫。流程：毒沼結算 → 敵人行動 → 視野/畫面更新 → 輸贏與暫停判定。
+async function tick() {
+  state.turn++;
+  if (isPoison(state.hero.x, state.hero.y)) {
+    state.hero.hp -= POISON_DMG; state.dmgTaken += POISON_DMG; state.lastHit = "毒沼";
+    addLog("身處毒沼 -" + POISON_DMG + " HP", "bad");
+  }
+  enemyTurn();
+  reveal();
+  render();
+  if (state.hero.hp <= 0) { endRun(false); throw STOP; }
+  if (state.hero.x === state.stairs.x && state.hero.y === state.stairs.y) { endRun(true); throw STOP; }
+  if (stopFlag) { running = false; addLog("已手動停止", "sys"); setRunBtn(false); save({ lastLog: document.getElementById("log").innerHTML }); throw STOP; }
+  if (document.getElementById("autopause").checked && state.hero.hp < prevHp && !paused) {
+    paused = true; setPauseUi();
+    addLog("受傷，自動暫停（按「下一步」逐回合看，或按「繼續」）", "sys");
+  }
+  prevHp = state.hero.hp;
+  if (paused) {
+    await new Promise(function (r) { stepResolve = r; });
+    stepResolve = null;
+    if (stopFlag) { running = false; addLog("已手動停止", "sys"); setRunBtn(false); save({ lastLog: document.getElementById("log").innerHTML }); throw STOP; }
+  } else {
+    await delay(SPEEDS[speedIdx][1]);
+    if (SPEEDS[speedIdx][1] === 0 && state.turn % 10 === 0) await delay(0);
+  }
+}
+
 function endRun(win) {
   running = false;
   paused = false; setPauseUi();
@@ -339,13 +361,13 @@ function endRun(win) {
   ov.style.display = "flex";
   document.getElementById("ovtitle").textContent = win ? "通關！" : "你死了";
   document.getElementById("ovtitle").style.color = win ? "#5DCAA5" : "#F09595";
-  document.getElementById("ovstats").textContent = "回合 " + st.turn + " ・ 擊殺 " + st.kills + " ・ 共受到 " + st.dmgTaken + " 點傷害";
+  document.getElementById("ovstats").textContent = "回合 " + state.turn + " ・ 擊殺 " + state.kills + " ・ 共受到 " + state.dmgTaken + " 點傷害";
   var hint;
-  if (!win) hint = "死因：" + (st.lastHit || "未知") + " ── 改改程式再來一次";
+  if (!win) hint = "死因：" + (state.lastHit || "未知") + " ── 改改程式再來一次";
   else if (curLevel < LEVELS.length - 1) hint = "已解鎖下一關，按 ▶ 前往";
   else hint = "全部通關！試試看：能不能用更少回合、更少受傷？";
   document.getElementById("ovhint").textContent = hint;
-  addLog(win ? "=== 通關！ ===" : "=== 死亡（死因：" + (st.lastHit || "未知") + "）===", win ? "good" : "bad");
+  addLog(win ? "=== 通關！ ===" : "=== 死亡（死因：" + (state.lastHit || "未知") + "）===", win ? "good" : "bad");
   setRunBtn(false);
   var s = loadSave();
   if (!s.levels) s.levels = {};
@@ -353,7 +375,7 @@ function endRun(win) {
   rec.attempts++;
   if (win) {
     rec.wins++;
-    if (!rec.best || st.turn < rec.best.turns) rec.best = { turns: st.turn, dmg: st.dmgTaken };
+    if (!rec.best || state.turn < rec.best.turns) rec.best = { turns: state.turn, dmg: state.dmgTaken };
     s.unlocked = Math.max(s.unlocked || 1, Math.min(curLevel + 2, LEVELS.length));
   }
   s.levels[curLevel] = rec;
@@ -363,116 +385,144 @@ function endRun(win) {
   updateLvBtns();
 }
 
-function delay(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
-
-async function tick() {
-  st.turn++;
-  if (isPoison(st.hero.x, st.hero.y)) {
-    st.hero.hp -= POISON_DMG; st.dmgTaken += POISON_DMG; st.lastHit = "毒沼";
-    addLog("身處毒沼 -" + POISON_DMG + " HP", "bad");
-  }
-  enemyTurn();
-  reveal();
-  render();
-  if (st.hero.hp <= 0) { endRun(false); throw STOP; }
-  if (st.hero.x === st.stairs.x && st.hero.y === st.stairs.y) { endRun(true); throw STOP; }
-  if (stopFlag) { running = false; addLog("已手動停止", "sys"); setRunBtn(false); save({ lastLog: document.getElementById("log").innerHTML }); throw STOP; }
-  if (document.getElementById("autopause").checked && st.hero.hp < prevHp && !paused) {
-    paused = true; setPauseUi();
-    addLog("受傷，自動暫停（按「下一步」逐回合看，或按「繼續」）", "sys");
-  }
-  prevHp = st.hero.hp;
-  if (paused) {
-    await new Promise(function (r) { stepResolve = r; });
-    stepResolve = null;
-    if (stopFlag) { running = false; addLog("已手動停止", "sys"); setRunBtn(false); save({ lastLog: document.getElementById("log").innerHTML }); throw STOP; }
-  } else {
-    await delay(SPEEDS[speedIdx][1]);
-    if (SPEEDS[speedIdx][1] === 0 && st.turn % 10 === 0) await delay(0);
-  }
-}
-
-var loopGuard = 0;
+/* ============================================================
+ * 7) 玩家 API — 注入到玩家程式的 13 個函式 + log
+ *    感知類不消耗回合；行動類每次呼叫推進一回合（await tick）。
+ * ============================================================ */
 function makeApi() {
   var snap = function (e) { return { id: e.id, x: e.x, y: e.y, hp: e.hp, type: e.type }; };
   return {
-    alive: function () { return st.hero.hp > 0; },
-    hp: function () { return st.hero.hp; },
-    hasPotion: function () { return st.hero.potions > 0; },
-    getEnemies: function () { return st.enemies.filter(function (e) { return visibleNow(e.x, e.y); }).map(snap); },
-    getItems: function () { return st.items.filter(function (i) { return st.seen[key(i.x, i.y)]; }).map(function (i) { return { x: i.x, y: i.y, type: i.type }; }); },
-    getStairs: function () { return st.seen[key(st.stairs.x, st.stairs.y)] ? { x: st.stairs.x, y: st.stairs.y } : null; },
-    distance: function (t) { return manh(st.hero.x, st.hero.y, t.x, t.y); },
+    alive: function () { return state.hero.hp > 0; },
+    hp: function () { return state.hero.hp; },
+    hasPotion: function () { return state.hero.potions > 0; },
+    getEnemies: function () { return state.enemies.filter(function (e) { return visibleNow(e.x, e.y); }).map(snap); },
+    getItems: function () { return state.items.filter(function (i) { return state.seen[posKey(i.x, i.y)]; }).map(function (i) { return { x: i.x, y: i.y, type: i.type }; }); },
+    getStairs: function () { return state.seen[posKey(state.stairs.x, state.stairs.y)] ? { x: state.stairs.x, y: state.stairs.y } : null; },
+    distance: function (t) { return manhattan(state.hero.x, state.hero.y, t.x, t.y); },
     nearest: function (list) {
       var best = null, bd = Infinity;
-      for (var i = 0; i < list.length; i++) { var d = manh(st.hero.x, st.hero.y, list[i].x, list[i].y); if (d < bd) { bd = d; best = list[i]; } }
+      for (var i = 0; i < list.length; i++) { var d = manhattan(state.hero.x, state.hero.y, list[i].x, list[i].y); if (d < bd) { bd = d; best = list[i]; } }
       return best;
     },
     move: async function (dir) {
       loopGuard = 0;
       var d = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] }[dir];
-      if (!d) { addLog('move() 方向要是 "up/down/left/right"', "warn"); } else heroStep(st.hero.x + d[0], st.hero.y + d[1]);
+      if (!d) { addLog('move() 方向要是 "up/down/left/right"', "warn"); } else heroStep(state.hero.x + d[0], state.hero.y + d[1]);
       await tick();
     },
     moveToward: async function (t) {
       loopGuard = 0;
       if (!t || typeof t.x !== "number") { addLog("moveToward() 需要一個有 x, y 的目標", "warn"); await tick(); return; }
-      var path = bfs(st.hero.x, st.hero.y, function (x, y) { return x === t.x && y === t.y; }, enemyBlocked);
-      if (!path) path = bfs(st.hero.x, st.hero.y, function (x, y) { return x === t.x && y === t.y; });
+      var goal = function (x, y) { return x === t.x && y === t.y; };
+      var path = bfs(state.hero.x, state.hero.y, goal, enemyBlocked);
+      if (!path) path = bfs(state.hero.x, state.hero.y, goal); // 繞不開敵人時退回直線路徑
       if (!path) addLog("走不到那裡，浪費一回合", "warn");
       else heroStep(path[0][0], path[0][1]);
       await tick();
     },
     attack: async function (t) {
       loopGuard = 0;
-      var e = t ? st.enemies.filter(function (en) { return en.id === t.id; })[0] : null;
+      var e = t ? state.enemies.filter(function (en) { return en.id === t.id; })[0] : null;
       if (!e) addLog("目標已不存在，浪費一回合", "warn");
-      else if (manh(st.hero.x, st.hero.y, e.x, e.y) > 1) addLog("目標太遠打不到（射程 1），浪費一回合", "warn");
+      else if (manhattan(state.hero.x, state.hero.y, e.x, e.y) > 1) addLog("目標太遠打不到（射程 1），浪費一回合", "warn");
       else {
         e.hp -= HERO_ATK;
-        if (e.hp <= 0) { st.enemies.splice(st.enemies.indexOf(e), 1); st.kills++; addLog("擊殺 " + e.type + "！", "good"); }
+        if (e.hp <= 0) { state.enemies.splice(state.enemies.indexOf(e), 1); state.kills++; addLog("擊殺 " + e.type + "！", "good"); }
         else addLog("攻擊 " + e.type + " -" + HERO_ATK + "（剩 " + e.hp + "）");
       }
       await tick();
     },
     drinkPotion: async function () {
       loopGuard = 0;
-      if (st.hero.potions > 0) { st.hero.potions--; st.hero.hp = Math.min(HERO_MAXHP, st.hero.hp + POTION_HEAL); addLog("喝藥水 +" + POTION_HEAL + " HP", "good"); }
+      if (state.hero.potions > 0) { state.hero.potions--; state.hero.hp = Math.min(HERO_MAXHP, state.hero.hp + POTION_HEAL); addLog("喝藥水 +" + POTION_HEAL + " HP", "good"); }
       else addLog("沒有藥水！浪費一回合", "warn");
       await tick();
     },
     explore: async function () {
       loopGuard = 0;
-      var path = bfs(st.hero.x, st.hero.y, function (x, y) { return !st.seen[key(x, y)] && !isWall(x, y); }, enemyBlocked);
+      var path = bfs(state.hero.x, state.hero.y, function (x, y) { return !state.seen[posKey(x, y)] && !isWall(x, y); }, enemyBlocked);
       if (!path) {
-        if (!st.exploreDone) { addLog("已無可探索的區域，朝樓梯前進", "sys"); st.exploreDone = true; }
-        var p2 = bfs(st.hero.x, st.hero.y, function (x, y) { return x === st.stairs.x && y === st.stairs.y; }, enemyBlocked);
+        if (!state.exploreDone) { addLog("已無可探索的區域，朝樓梯前進", "sys"); state.exploreDone = true; }
+        var p2 = bfs(state.hero.x, state.hero.y, function (x, y) { return x === state.stairs.x && y === state.stairs.y; }, enemyBlocked);
         if (p2) heroStep(p2[0][0], p2[0][1]);
       }
       else heroStep(path[0][0], path[0][1]);
       await tick();
     },
     log: function (msg) { addLog("你的 log：" + String(msg), "sys"); },
+    // 內部用：transformPlayerCode 注入到每個迴圈開頭，防無限空轉 + 支援暫停/停止
     __loop: async function () {
       loopGuard++;
       if (stopFlag) { running = false; addLog("已手動停止", "sys"); setRunBtn(false); save({ lastLog: document.getElementById("log").innerHTML }); throw STOP; }
-      if (loopGuard > 50000) { addLog("偵測到無行動的無限迴圈（迴圈內要有 move/attack 等行動）", "bad"); throw STOP; }
+      if (loopGuard > LOOP_GUARD_LIMIT) { addLog("偵測到無行動的無限迴圈（迴圈內要有 move/attack 等行動）", "bad"); throw STOP; }
       if (loopGuard % 2000 === 0) await delay(0);
     }
   };
 }
 
-function transform(src) {
+/* ============================================================
+ * 8) 玩家程式碼轉換器
+ *    把同步外觀的行動呼叫轉成 await（move(...) → await move(...)），
+ *    並在 while/for 開頭注入 __loop()（無限迴圈防護）。
+ *    已知限制：自訂函式只認得 function name() {} 宣告式；
+ *    箭頭函式/函式運算式內呼叫行動函式會 SyntaxError（換直譯器後根治）。
+ * ============================================================ */
+function transformPlayerCode(src) {
   var code = src.replace(/\b(moveToward|move|attack|drinkPotion|explore)\s*\(/g, "await $1(");
   code = code.replace(/\b(while|for)\s*\(([^)]*)\)\s*\{/g, "$1 ($2) { await __loop();");
   var names = [], m, re = /function\s+([A-Za-z_$][\w$]*)/g;
   while ((m = re.exec(src))) names.push(m[1]);
-  
   code = code.replace(/\bfunction\b/g, "async function");
   for (var i = 0; i < names.length; i++) {
     code = code.replace(new RegExp("(?<!function )\\b" + names[i] + "\\s*\\(", "g"), "await " + names[i] + "(");
   }
   return code;
+}
+
+/* ============================================================
+ * 9) UI 與渲染
+ * ============================================================ */
+function addLog(msg, cls) {
+  var el = document.getElementById("log");
+  var line = document.createElement("div");
+  if (cls) line.className = cls;
+  line.textContent = "[T" + state.turn + "] " + msg;
+  el.appendChild(line);
+  while (el.children.length > LOG_LIMIT) el.removeChild(el.firstChild);
+  el.scrollTop = el.scrollHeight;
+}
+
+// 玩家看得到全圖；勇者視野外的格子調暗（API 仍拿不到那些資訊）。
+function render() {
+  var html = "";
+  for (var y = 0; y < H; y++) for (var x = 0; x < W; x++) {
+    var c = MAPSRC[y][x], txt = "";
+    var bg = c === "#" ? "#0f0f0e" : isPoison(x, y) ? "#3C3489" : "#3a3a37";
+    if (state.stairs && state.stairs.x === x && state.stairs.y === y) { bg = "#85B7EB"; txt = "▼"; }
+    for (var i = 0; i < state.items.length; i++) if (state.items[i].x === x && state.items[i].y === y) { bg = "#FAC775"; txt = "♥"; }
+    for (var j = 0; j < state.enemies.length; j++) {
+      var e = state.enemies[j];
+      if (e.x === x && e.y === y) { bg = e.ch === "B" ? "#D85A30" : "#F0997B"; txt = e.ch; }
+    }
+    if (state.hero.x === x && state.hero.y === y) { bg = "#5DCAA5"; txt = "@"; }
+    var dim = visibleNow(x, y) ? "" : "filter:brightness(0.45);";
+    html += '<div class="cell" style="background:' + bg + ';color:#161615;font-weight:700;' + dim + '">' + txt + "</div>";
+  }
+  document.getElementById("map").innerHTML = html;
+  var h = state.hero;
+  document.getElementById("hpbar").style.width = Math.max(0, h.hp / HERO_MAXHP * 100) + "%";
+  document.getElementById("hptext").textContent = Math.max(0, h.hp) + "/" + HERO_MAXHP;
+  document.getElementById("potiontext").textContent = h.potions;
+  document.getElementById("stats").textContent = "回合 " + state.turn + " ・ 擊殺 " + state.kills + " ・ 受傷 " + state.dmgTaken;
+}
+
+function renderRecord() {
+  var s = loadSave(), el = document.getElementById("record");
+  var rec = (s.levels || {})[curLevel];
+  if (!rec || !rec.attempts) { el.textContent = "本關尚無挑戰紀錄"; return; }
+  var t = "本關挑戰 " + rec.attempts + " 次 ・ 通關 " + (rec.wins || 0) + " 次";
+  if (rec.best) t += " ・ 最佳 " + rec.best.turns + " 回合（受傷 " + rec.best.dmg + "）";
+  el.textContent = t;
 }
 
 function setRunBtn(isRunning) {
@@ -482,23 +532,47 @@ function setRunBtn(isRunning) {
   b.style.borderColor = b.style.background;
 }
 
-async function run() {
+function setPauseUi() {
+  document.getElementById("pausebtn").textContent = paused ? "▶ 繼續" : "⏸ 暫停";
+}
+
+function updateLvBtns() {
+  document.getElementById("prevlv").disabled = curLevel === 0;
+  document.getElementById("nextlv").disabled = curLevel >= unlockedCount() - 1 || curLevel >= LEVELS.length - 1;
+}
+
+function loadLevel(i) {
+  curLevel = Math.max(0, Math.min(LEVELS.length - 1, i));
+  MAPSRC = LEVELS[curLevel].map;
+  H = MAPSRC.length; W = MAPSRC[0].length;
+  document.getElementById("map").style.gridTemplateColumns = "repeat(" + W + ", 32px)";
+  document.getElementById("lvname").textContent = (curLevel + 1) + "/" + LEVELS.length + " " + LEVELS[curLevel].name;
+  save({ cur: curLevel });
   reset();
-  running = true; stopFlag = false; loopGuard = 0; prevHp = st.hero.hp;
+  renderRecord();
+  updateLvBtns();
+}
+
+/* ============================================================
+ * 10) 執行控制 — 編譯玩家程式並反覆執行（TFWR 式自動重跑）
+ * ============================================================ */
+async function startRun() {
+  reset();
+  running = true; stopFlag = false; loopGuard = 0; prevHp = state.hero.hp;
   save({ code: document.getElementById("editor").value });
   setRunBtn(true);
   addLog("=== 開始執行 ===", "sys");
   var api = makeApi();
   try {
-    var code = transform(document.getElementById("editor").value);
+    var code = transformPlayerCode(document.getElementById("editor").value);
     var keys = Object.keys(api);
     var factory = new Function(keys.join(","), "return (async function(){\n" + code + "\n});");
     var program = factory.apply(null, keys.map(function (k) { return api[k]; }));
     while (running && !stopFlag) {
-      var before = st.turn;
+      var before = state.turn;
       await program();
       loopGuard = 0;
-      if (st.turn === before) { addLog("腳本跑完一輪但沒有執行任何行動，已停止（至少要呼叫一個行動函式）", "warn"); break; }
+      if (state.turn === before) { addLog("腳本跑完一輪但沒有執行任何行動，已停止（至少要呼叫一個行動函式）", "warn"); break; }
     }
     if (running) { running = false; setRunBtn(false); }
   } catch (err) {
@@ -508,9 +582,12 @@ async function run() {
   }
 }
 
+/* ============================================================
+ * 11) 事件繫結與啟動
+ * ============================================================ */
 document.getElementById("runbtn").addEventListener("click", function () {
   if (running) { stopFlag = true; if (stepResolve) stepResolve(); }
-  else { paused = false; setPauseUi(); run(); }
+  else { paused = false; setPauseUi(); startRun(); }
 });
 document.getElementById("pausebtn").addEventListener("click", function () {
   if (!running) return;
@@ -529,7 +606,7 @@ document.getElementById("resetbtn").addEventListener("click", function () {
   } else reset();
 });
 document.getElementById("stepbtn").addEventListener("click", function () {
-  if (!running) { paused = true; setPauseUi(); run(); return; }
+  if (!running) { paused = true; setPauseUi(); startRun(); return; }
   if (!paused) { paused = true; setPauseUi(); return; }
   if (stepResolve) stepResolve();
 });
@@ -545,7 +622,6 @@ document.getElementById("editor").addEventListener("keydown", function (e) {
     t.selectionStart = t.selectionEnd = s + 2;
   }
 });
-
 document.getElementById("prevlv").addEventListener("click", function () {
   if (running) return;
   loadLevel(curLevel - 1);
@@ -555,6 +631,7 @@ document.getElementById("nextlv").addEventListener("click", function () {
   loadLevel(curLevel + 1);
 });
 
+// 舊版（V1，單關卡時代）存檔遷移
 (function migrate() {
   try {
     if (!localStorage.getItem(SAVE_KEY) && localStorage.getItem("codeDungeonProtoV1")) {
@@ -570,6 +647,7 @@ document.getElementById("nextlv").addEventListener("click", function () {
 
 loadLevel(Math.min(loadSave().cur || 0, unlockedCount() - 1));
 
+// 還原上次的程式碼、log、API 參考開合狀態
 (function restore() {
   try {
     var s = loadSave();
