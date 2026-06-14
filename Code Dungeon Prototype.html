@@ -14,8 +14,8 @@
   button:hover { background: #2a2a28; }
   button:disabled { opacity: 0.35; cursor: default; }
   button.primary { background: #1D9E75; border-color: #1D9E75; color: #04342C; font-weight: 600; }
-  .main { display: flex; min-height: calc(100vh - 52px); }
-  .left { flex: 1; min-width: 320px; display: flex; flex-direction: column; border-right: 1px solid #333; }
+  .main { display: flex; flex-direction: row-reverse; min-height: calc(100vh - 52px); }
+  .left { flex: 1; min-width: 320px; display: flex; flex-direction: column; border-left: 1px solid #333; }
   #editor { flex: 1; background: #1c1c1b; color: #D3D1C7; border: none; outline: none; resize: none; padding: 12px 14px; font-family: Consolas, Menlo, monospace; font-size: 13px; line-height: 1.6; tab-size: 2; min-height: 320px; }
   .right { width: 460px; flex: none; padding: 14px 16px; }
   #mapwrap { position: relative; width: fit-content; }
@@ -28,6 +28,14 @@
   #stats { margin-top: 8px; font-size: 12px; color: #B4B2A9; }
   #log { margin-top: 10px; height: 220px; overflow-y: auto; background: #1c1c1b; border: 1px solid #333; border-radius: 6px; padding: 8px 10px; font-family: Consolas, Menlo, monospace; font-size: 12px; line-height: 1.7; }
   #log .bad { color: #F09595; } #log .good { color: #9FE1CB; } #log .warn { color: #FAC775; } #log .sys { color: #888780; }
+  #snippets { padding: 8px 14px; border-top: 1px solid #333; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  #snippets .label { font-size: 12px; color: #888780; }
+  #snippets button.save { padding: 3px 10px; font-size: 12px; }
+  .snippet { display: inline-flex; align-items: center; gap: 5px; background: #232322; border: 1px solid #444; border-radius: 12px; padding: 2px 4px 2px 10px; font-size: 12px; }
+  .snippet .name { cursor: pointer; color: #9FE1CB; }
+  .snippet .name:hover { text-decoration: underline; }
+  .snippet .del { cursor: pointer; color: #888780; border: none; background: transparent; padding: 0 4px; font-size: 13px; line-height: 1; border-radius: 50%; }
+  .snippet .del:hover { color: #F09595; background: #333; }
   details { padding: 8px 14px; border-top: 1px solid #333; font-size: 12px; }
   details code { color: #85B7EB; }
   details td { padding: 2px 10px 2px 0; vertical-align: top; color: #B4B2A9; }
@@ -49,6 +57,7 @@
   <button id="pausebtn">⏸ 暫停</button>
   <button id="stepbtn">⏭ 下一步</button>
   <button id="resetbtn">↺ 重置關卡</button>
+  <button id="reseteditorbtn">⤺ 還原程式碼</button>
   <label style="font-size:12px;color:#B4B2A9;display:flex;align-items:center;gap:4px;"><input type="checkbox" id="autopause">受傷自動暫停</label>
 </div>
 
@@ -66,6 +75,11 @@ if (enemies.length > 0) {
 } else {
   explore();
 }</textarea>
+    <div id="snippets">
+      <button id="savesnippet" class="save">＋ 儲存片段</button>
+      <span class="label">（選取一段程式碼再存；沒選取則存整份。點名稱貼到游標處）</span>
+      <span id="snippetlist"></span>
+    </div>
     <details>
       <summary>API 參考（v0，共 13 個）</summary>
       <table>
@@ -73,7 +87,7 @@ if (enemies.length > 0) {
         <tr><td><code>hp()</code></td><td>目前生命值</td><td><code>moveToward(t)</code></td><td>朝目標走一步（會穿毒沼，不會繞）</td></tr>
         <tr><td><code>hasPotion()</code></td><td>身上是否有藥水</td><td><code>attack(t)</code></td><td>攻擊相鄰目標（射程 1）</td></tr>
         <tr><td><code>getEnemies()</code></td><td>視野內敵人 [{x,y,hp,type}]</td><td><code>drinkPotion()</code></td><td>喝藥水，回 30 HP</td></tr>
-        <tr><td><code>getItems()</code></td><td>已看見的道具（走上去自動撿）</td><td><code>explore()</code></td><td>朝最近的未探索區走一步（探完則走向樓梯）</td></tr>
+        <tr><td><code>getItems()</code></td><td>已看見的道具（走上去自動撿）</td><td><code>explore(dir?)</code></td><td>朝最近的未探索區走一步；可選 dir（"up"/"down"/"left"/"right"）指定傾向方向，看見樓梯後預設朝樓梯</td></tr>
         <tr><td><code>getStairs()</code></td><td>樓梯位置，沒看過回傳 null</td><td><code>distance(t)</code></td><td>與目標的曼哈頓距離</td></tr>
         <tr><td><code>nearest(list)</code></td><td>清單中最近的一個</td><td></td><td>行動類每呼叫一次 = 一回合，敵人也會動；腳本跑完自動從頭執行（頂層變數會重置）</td></tr>
       </table>
@@ -117,8 +131,8 @@ var LEVELS = [
     "#......+...#",
     "###.####.###",
     "#...~~~....#",
-    "#.!.~~~.g..#",
-    "#..~~~.>...#",
+    "#.!.~~~~g..#",
+    "#..~~~~>...#",
     "############"
   ]},
   { name: "迷宮", hint: "樓梯在深處，走錯路有毒沼等著", map: [
@@ -184,6 +198,7 @@ var speedIdx = 0;
 var prevHp = 0;              // 上個 tick 的 HP（受傷自動暫停用）
 var loopGuard = 0;           // 連續無行動計數
 var STOP = { __stop: true }; // 內部訊號：中止玩家程式（非錯誤）
+var DEFAULT_CODE = "";       // 編輯器初始腳本，供「還原程式碼」按鈕使用（init 時填入）
 
 /* ============================================================
  * 4) 地圖工具
@@ -201,15 +216,40 @@ function enemyAt(x, y) {
 }
 function enemyBlocked(x, y) { return !!enemyAt(x, y); }
 
+// 方向向量，與 move(dir) 用的字串一致
+var DIRVEC = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] };
+// 產生 BFS 鄰居展開順序：偏好 dir，最後才是其反方向。
+// 用來在「距離相同的多個目標」間做方向性 tie-break（不會選到更遠的目標）。
+function dirsPreferring(dir) {
+  var base = [[0, -1], [0, 1], [-1, 0], [1, 0]];
+  var pref = DIRVEC[dir];
+  if (!pref) return base;
+  var opp = [-pref[0], -pref[1]];
+  var perp = [];
+  for (var i = 0; i < base.length; i++) {
+    var d = base[i];
+    var isPref = d[0] === pref[0] && d[1] === pref[1];
+    var isOpp = d[0] === opp[0] && d[1] === opp[1];
+    if (!isPref && !isOpp) perp.push(d);
+  }
+  return [pref].concat(perp).concat([opp]);
+}
+// 由起點朝目標的「主要方向」（曼哈頓上較大的軸），用於 explore 看見樓梯後的預設傾向
+function dominantDir(fromX, fromY, toX, toY) {
+  var dx = toX - fromX, dy = toY - fromY;
+  if (Math.abs(dx) >= Math.abs(dy)) return dx === 0 ? null : (dx > 0 ? "right" : "left");
+  return dy > 0 ? "down" : "up";
+}
+
 // BFS 最短路徑。goal(x,y) 判定目標；blocked(x,y)（可選）為臨時障礙（如敵人），
 // 但目標格本身不受 blocked 影響。回傳「下一步起」的路徑陣列；到不了回傳 null。
-function bfs(sx, sy, goal, blocked) {
+function bfs(sx, sy, goal, blocked, dirOrder) {
   var prev = {}, q = [[sx, sy]], found = null;
   prev[posKey(sx, sy)] = null;
+  var dirs = dirOrder || [[0, -1], [0, 1], [-1, 0], [1, 0]];
   while (q.length) {
     var cur = q.shift();
     if (goal(cur[0], cur[1]) && !(cur[0] === sx && cur[1] === sy)) { found = cur; break; }
-    var dirs = [[0, -1], [0, 1], [-1, 0], [1, 0]];
     for (var i = 0; i < 4; i++) {
       var nx = cur[0] + dirs[i][0], ny = cur[1] + dirs[i][1];
       if (isWall(nx, ny) || (posKey(nx, ny) in prev)) continue;
@@ -438,12 +478,18 @@ function makeApi() {
       else addLog("沒有藥水！浪費一回合", "warn");
       await tick();
     },
-    explore: async function () {
+    explore: async function (dir) {
       loopGuard = 0;
-      var path = bfs(state.hero.x, state.hero.y, function (x, y) { return !state.seen[posKey(x, y)] && !isWall(x, y); }, enemyBlocked);
+      // 決定方向傾向：明確指定 > 已看見樓梯則朝樓梯 > 無傾向
+      if (dir && !DIRVEC[dir]) { addLog('explore() 的方向要是 "up"/"down"/"left"/"right"，已忽略：' + dir, "warn"); dir = null; }
+      if (!dir && state.seen[posKey(state.stairs.x, state.stairs.y)]) {
+        dir = dominantDir(state.hero.x, state.hero.y, state.stairs.x, state.stairs.y);
+      }
+      var order = dirsPreferring(dir);
+      var path = bfs(state.hero.x, state.hero.y, function (x, y) { return !state.seen[posKey(x, y)] && !isWall(x, y); }, enemyBlocked, order);
       if (!path) {
         if (!state.exploreDone) { addLog("已無可探索的區域，朝樓梯前進", "sys"); state.exploreDone = true; }
-        var p2 = bfs(state.hero.x, state.hero.y, function (x, y) { return x === state.stairs.x && y === state.stairs.y; }, enemyBlocked);
+        var p2 = bfs(state.hero.x, state.hero.y, function (x, y) { return x === state.stairs.x && y === state.stairs.y; }, enemyBlocked, order);
         if (p2) heroStep(p2[0][0], p2[0][1]);
       }
       else heroStep(path[0][0], path[0][1]);
@@ -605,6 +651,82 @@ document.getElementById("resetbtn").addEventListener("click", function () {
     }, 50);
   } else reset();
 });
+/* ---------- 程式碼片段（snippets）：存常用寫法、點一下貼到游標處 ---------- */
+var DEFAULT_SNIPPETS = [
+  { name: "喝藥水保命", code: "if (hp() < 25 && hasPotion()) drinkPotion();" },
+  { name: "打最近敵人", code: "var es = getEnemies();\nif (es.length > 0) {\n  var t = nearest(es);\n  if (distance(t) <= 1) attack(t); else moveToward(t);\n}" },
+  { name: "撿光道具再走", code: "if (getEnemies().length === 0 && getItems().length > 0) moveToward(getItems()[0]);" }
+];
+function getSnippets() {
+  var s = loadSave();
+  if (!s.snippets) return DEFAULT_SNIPPETS.slice();  // 首次：用預設片段
+  return s.snippets;
+}
+function renderSnippets() {
+  var list = document.getElementById("snippetlist");
+  list.innerHTML = "";
+  var snips = getSnippets();
+  for (var i = 0; i < snips.length; i++) {
+    (function (snip, idx) {
+      var chip = document.createElement("span");
+      chip.className = "snippet";
+      var name = document.createElement("span");
+      name.className = "name"; name.textContent = snip.name;
+      name.title = snip.code;
+      name.addEventListener("click", function () { insertSnippet(snip.code); });
+      var del = document.createElement("button");
+      del.className = "del"; del.textContent = "✕"; del.title = "刪除此片段";
+      del.addEventListener("click", function () { deleteSnippet(idx); });
+      chip.appendChild(name); chip.appendChild(del);
+      list.appendChild(chip);
+    })(snips[i], i);
+  }
+}
+function insertSnippet(code) {
+  var ed = document.getElementById("editor");
+  var s = ed.selectionStart, e = ed.selectionEnd;
+  ed.value = ed.value.slice(0, s) + code + ed.value.slice(e);
+  ed.selectionStart = ed.selectionEnd = s + code.length;
+  ed.focus();
+  save({ code: ed.value });
+}
+function saveSnippet() {
+  var ed = document.getElementById("editor");
+  var sel = ed.value.slice(ed.selectionStart, ed.selectionEnd);
+  var code = (sel.length ? sel : ed.value).replace(/^\s+|\s+$/g, "");
+  if (!code) { alert("沒有可儲存的內容。"); return; }
+  var name = prompt("片段名稱：", sel.length ? "" : "我的腳本");
+  if (name === null) return;
+  name = name.replace(/^\s+|\s+$/g, "");
+  if (!name) return;
+  var snips = getSnippets();
+  var existing = -1;
+  for (var i = 0; i < snips.length; i++) if (snips[i].name === name) existing = i;
+  if (existing >= 0) {
+    if (!confirm('已有同名片段「' + name + '」，要覆蓋嗎？')) return;
+    snips[existing] = { name: name, code: code };
+  } else snips.push({ name: name, code: code });
+  save({ snippets: snips });
+  renderSnippets();
+}
+function deleteSnippet(idx) {
+  var snips = getSnippets();
+  if (idx < 0 || idx >= snips.length) return;
+  if (!confirm('刪除片段「' + snips[idx].name + '」？')) return;
+  snips.splice(idx, 1);
+  save({ snippets: snips });
+  renderSnippets();
+}
+document.getElementById("savesnippet").addEventListener("click", saveSnippet);
+
+document.getElementById("reseteditorbtn").addEventListener("click", function () {
+  if (running) return;
+  if (!confirm("還原成初始腳本？目前編輯器內的程式碼會被覆蓋。")) return;
+  var ed = document.getElementById("editor");
+  ed.value = DEFAULT_CODE;
+  save({ code: DEFAULT_CODE });
+  ed.focus();
+});
 document.getElementById("stepbtn").addEventListener("click", function () {
   if (!running) { paused = true; setPauseUi(); startRun(); return; }
   if (!paused) { paused = true; setPauseUi(); return; }
@@ -652,6 +774,7 @@ loadLevel(Math.min(loadSave().cur || 0, unlockedCount() - 1));
   try {
     var s = loadSave();
     var ed = document.getElementById("editor");
+    DEFAULT_CODE = ed.value;   // 還原用：textarea 的初始腳本（在被存檔覆寫前先記住）
     if (typeof s.code === "string" && s.code.length) ed.value = s.code;
     var det = document.querySelector("details");
     if (det) {
@@ -664,6 +787,7 @@ loadLevel(Math.min(loadSave().cur || 0, unlockedCount() - 1));
       lg.scrollTop = lg.scrollHeight;
     }
     renderRecord();
+    renderSnippets();
     var tmr = null;
     ed.addEventListener("input", function () {
       clearTimeout(tmr);

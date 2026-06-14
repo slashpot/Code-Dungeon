@@ -154,6 +154,7 @@ function stubDom(editorCode, levelIdx) {
 
 function runCase(name, levelIdx) {
   if (name === "check") return runConnectivityCheck();
+  if (name === "exploredir") return runExploreDirCheck();
   const script = SCRIPTS[name];
   if (!script) { console.log("RESULT:UNKNOWN_CASE"); process.exit(2); }
   stubDom(script, levelIdx);
@@ -188,6 +189,41 @@ function runConnectivityCheck() {
   console.log("RESULT:" + (ok ? "OK" : "FAIL"));
 }
 
+/* explore(dir) 機制檢查：在「四向等距」的開放空間裡，
+ * 驗證 dirsPreferring 真的把 BFS 第一步導向指定方向（而非永遠往上）。 */
+function runExploreDirCheck() {
+  stubDom("", 0);
+  eval(extractGameScript());
+  // 7x7 邊牆包住 5x5 開放區，主角置中 (3,3)，四向都走得到 distance 2
+  MAPSRC = ["#######", "#.....#", "#.....#", "#.....#", "#.....#", "#.....#", "#######"];
+  W = MAPSRC[0].length; H = MAPSRC.length;
+  const cx = 3, cy = 3; // 中心
+  const goals = { up: [3, 1], down: [3, 5], left: [1, 3], right: [5, 3] };
+  // goal：任一方向端點（皆 manhattan 距離 2、等距）
+  const goal = (x, y) => Object.keys(goals).some((k) => goals[k][0] === x && goals[k][1] === y);
+  const firstStepDir = (dir) => {
+    const path = bfs(cx, cy, goal, null, dirsPreferring(dir));
+    if (!path) return "NO_PATH";
+    const dx = path[0][0] - cx, dy = path[0][1] - cy;
+    if (dx === 1) return "right"; if (dx === -1) return "left";
+    if (dy === 1) return "down"; if (dy === -1) return "up";
+    return "?";
+  };
+  const cases = [
+    ["預設（無方向）→ 往上", firstStepDir(null), "up"],
+    ['explore("right") → 往右', firstStepDir("right"), "right"],
+    ['explore("down") → 往下', firstStepDir("down"), "down"],
+    ['explore("left") → 往左', firstStepDir("left"), "left"]
+  ];
+  let ok = true;
+  for (const [label, got, want] of cases) {
+    const pass = got === want;
+    ok = ok && pass;
+    console.log("DETAIL: " + label + "（實得 " + got + "）" + (pass ? "" : " ✗"));
+  }
+  console.log("RESULT:" + (ok ? "OK" : "FAIL"));
+}
+
 /* ================= 父行程：跑整個套件 ================= */
 function runSuite() {
   let pass = 0, fail = 0;
@@ -200,6 +236,15 @@ function runSuite() {
   console.log("=== 連通性檢查 ===");
   {
     const r = spawn({ CASE: "check" });
+    const res = resultOf(r.stdout);
+    console.log(detailOf(r.stdout));
+    console.log(res === "OK" ? "PASS\n" : "FAIL\n");
+    res === "OK" ? pass++ : fail++;
+  }
+
+  console.log("=== explore(dir) 方向參數 ===");
+  {
+    const r = spawn({ CASE: "exploredir" });
     const res = resultOf(r.stdout);
     console.log(detailOf(r.stdout));
     console.log(res === "OK" ? "PASS\n" : "FAIL\n");
