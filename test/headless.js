@@ -106,6 +106,9 @@ const EXPECT = [
   ["L4 pro 通關",                 3, "pro",   "WIN"],
   ["L5 pro 不囤藥應死（教補給）",   4, "pro",   "DEAD"],
   ["L5 stock 囤藥通關",            4, "stock", "WIN"],
+  ["L6 初始腳本應死（散兵）",       5, "naive", "DEAD"],
+  ["L6 smart 應無法通關（教 distance 排序）", 5, "smart", "DEAD|TIMEOUT"],
+  ["L6 pro 通關",                 5, "pro",   "WIN"],
   ["ES6 語法可用（L1）",           0, "es6",   "WIN"],
   ["零行動腳本被防呆擋下（L1）",    0, "idle",  "IDLE"]
 ];
@@ -155,6 +158,7 @@ function stubDom(editorCode, levelIdx) {
 function runCase(name, levelIdx) {
   if (name === "check") return runConnectivityCheck();
   if (name === "exploredir") return runExploreDirCheck();
+  if (name === "skilltrial") return runSkillTrialCheck();
   const script = SCRIPTS[name];
   if (!script) { console.log("RESULT:UNKNOWN_CASE"); process.exit(2); }
   stubDom(script, levelIdx);
@@ -224,6 +228,53 @@ function runExploreDirCheck() {
   console.log("RESULT:" + (ok ? "OK" : "FAIL"));
 }
 
+/* 多階 skill 機制檢查：
+ *  1) 內建 nearest 是 Lv0 弱版（回傳清單第一個，非最近）
+ *  2) 正確的參考實作能通過各 skill 各階的測試案例
+ *  3) 弱版(first-in-list)會被 nearest Lv1 測試擋下（測試有牙齒） */
+function runSkillTrialCheck() {
+  stubDom("", 0);
+  eval(extractGameScript());
+  let ok = true;
+  const log = (label, pass) => { ok = ok && pass; console.log("DETAIL: " + label + (pass ? " ✓" : " ✗")); };
+
+  // 1) 內建弱版 nearest
+  loadLevel(0);
+  const api = makeApi();
+  const weak = api.nearest([{ x: 9, y: 0 }, { x: 1, y: 0 }]);
+  log("內建 nearest 是弱版(回傳第一個)", weak && weak.x === 9);
+
+  // 參考實作
+  const C = {
+    distance: "function distance(t){var m=myPos();return Math.abs(m.x-t.x)+Math.abs(m.y-t.y);}",
+    near1: "function nearest(list){var b=null,bd=Infinity;for(var i=0;i<list.length;i++){var d=distance(list[i]);if(d<bd){bd=d;b=list[i];}}return b;}",
+    near2: "function nearest(list){var b=null,bd=Infinity,bh=Infinity;for(var i=0;i<list.length;i++){var d=distance(list[i]),h=list[i].hp;if(d<bd||(d===bd&&h<bh)){bd=d;bh=h;b=list[i];}}return b;}",
+    nearWeak: "function nearest(list){return list[0]||null;}"
+  };
+  let POS = { x: 0, y: 0 };
+  const myPos = () => ({ x: POS.x, y: POS.y });
+  const trial = (id) => TRIALS.find((t) => t.id === id);
+  const runLevel = (id, lvCode, levelIdx, prereq) => {
+    const map = {}; if (prereq) map.distance = prereq; map[id] = lvCode;
+    const fn = buildTrialFns(myPos, map)[id];
+    return trial(id).levels[levelIdx].cases.every((c) => {
+      POS = c.pos; let g; try { g = fn.apply(null, c.args); } catch (e) { return false; }
+      const exp = ("expectIdx" in c) ? c.args[0][c.expectIdx] : c.expect;
+      if (exp === null || exp === undefined) return g === null || g === undefined;
+      if ("expectIdx" in c) return !!g && g.x === exp.x && g.y === exp.y;
+      return g === exp;
+    });
+  };
+  // 2) 正確參考實作各階通過
+  log("distance Lv1 參考實作通過", runLevel("distance", C.distance, 0, null));
+  log("nearest Lv1 參考實作通過（用 distance）", runLevel("nearest", C.near1, 0, C.distance));
+  log("nearest Lv2 參考實作通過（hp tie-break）", runLevel("nearest", C.near2, 1, C.distance));
+  // 3) 弱版被 Lv1 測試擋下
+  log("弱版 nearest 無法通過 Lv1（測試有牙齒）", runLevel("nearest", C.nearWeak, 0, C.distance) === false);
+
+  console.log("RESULT:" + (ok ? "OK" : "FAIL"));
+}
+
 /* ================= 父行程：跑整個套件 ================= */
 function runSuite() {
   let pass = 0, fail = 0;
@@ -245,6 +296,15 @@ function runSuite() {
   console.log("=== explore(dir) 方向參數 ===");
   {
     const r = spawn({ CASE: "exploredir" });
+    const res = resultOf(r.stdout);
+    console.log(detailOf(r.stdout));
+    console.log(res === "OK" ? "PASS\n" : "FAIL\n");
+    res === "OK" ? pass++ : fail++;
+  }
+
+  console.log("=== 多階 skill 機制 ===");
+  {
+    const r = spawn({ CASE: "skilltrial" });
     const res = resultOf(r.stdout);
     console.log(detailOf(r.stdout));
     console.log(res === "OK" ? "PASS\n" : "FAIL\n");

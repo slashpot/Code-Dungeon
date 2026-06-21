@@ -8,9 +8,10 @@
 - [x] 概念提案與設計文件
 - [x] API v0 定案（紙上驗證：三情境腳本各 ≤15 行）
 - [x] 可遊玩 prototype：5 個模組化關卡、逐步執行、localStorage 存檔
-- [x] 程式整理（分區/命名/常數）＋ 回歸測試入庫（`node test/headless.js`，12 案例）
+- [x] 程式整理（分區/命名/常數）＋ 回歸測試入庫（`node test/headless.js`，16 案例）
+- [x] 修煉場（dojo）骨架：玩家親手實作 helper、testcase 全過即解鎖，完成的實作於闖關時注入取代內建版（首批：distance、nearest）
 - [ ] 好玩度測試（找 2~3 人玩，含不會寫程式的人）
-- [ ] 之後：隨機地圖、技能（fireball 等）、放置模式、直譯器換裝
+- [ ] 之後：隨機地圖、技能（fireball 等）、放置模式、直譯器換裝；修煉場擴充（moveToward／explore 需先補「跨回合持久記憶」primitive）
 
 ## 已定案的關鍵決策（含理由，勿輕易翻案）
 
@@ -21,15 +22,22 @@
 5. **資訊差設計**：玩家看全圖（視野外調暗），勇者 API 只拿視野內資訊（牆會擋視野，BFS 距離 ≤3）。這是驅動玩家寫偵察邏輯的核心動力。
 6. **尋路規則**：moveToward/explore 會繞開敵人（否則卡死），但不繞毒沼——地形代價是玩家的功課。毒沼 = 回合結束站在上面就扣血。`explore(dir?)` 可帶選擇性方向（"up/down/left/right"）做等距 tie-break 傾向；無參數時若已看見樓梯則預設朝樓梯方向（dominantDir）漂移，否則維持原始 up→down→left→right 順序。注意：此「朝樓梯漂移」預設會縮短毒沼穿越路徑，曾使 L2 naive 腳本苟活，故 L2 毒沼已補強（樓梯兩側各加一格 ~）以維持「逼學喝藥水」。
 7. **關卡模組化**：`LEVELS` 陣列，每關 `{name, hint, map}`，地圖用字串畫（`#`牆 `~`毒沼 `!`藥水 `>`樓梯 `s/g/B`敵人）。加關卡零引擎改動。
-8. **API v0（13 函式）**：感知 alive/hp/hasPotion/getEnemies/getItems/getStairs/distance/nearest ＋ 行動 move/moveToward/attack/drinkPotion/explore（＋log）。
+8. **API v0（14 函式）**：感知 alive/hp/hasPotion/getEnemies/getItems/getStairs/myPos/distance/nearest ＋ 行動 move/moveToward/attack/drinkPotion/explore（＋log）。`myPos()` 回傳勇者座標 {x,y}，是讓玩家能自己實作 distance/nearest 的前提；與資訊差設計不衝突（自己的位置算視野內，且 getEnemies/Items/Stairs 本來就給絕對座標）。
+9. **修煉場（dojo）＋ 多階 skill（弱版內建 vs 升級）**：`TRIALS` 每個 skill 有 `levels[]`（Lv1..N，各含 `desc/starter/cases`）。**內建版＝Lv0**，修煉通過某階即解鎖該階實作並注入。決策方向＝「弱化內建版、修煉逐級升級」：
+   - `nearest`：內建 Lv0 是**弱版**＝直接回傳清單第一個（無距離意識）；Lv1 真正最近、Lv2 距離平手時挑 hp 低的。這就是 skill 有意義的關鍵（不修煉 = 笨 targeting）。
+   - `distance`：刻意**不弱化**（內建仍正確），因為弱化會讓 L1 初始腳本失效、破壞新手可玩性；故 distance 維持單階「入門用」，練它＝熟悉修煉流程＋換成自己的版本。
+   - 機制：`skillRec(id)→{level,codes}`（相容舊 `{code,done}`）；驗證用 `buildTrialFns(myPos, {id:code})` 把玩家 `function id(){}` 字串＋前置 skill「目前最高階」實作編進同一 scope，逐案 stub myPos；全過 `save({trials:{id:{level,codes}}})` 並把 level 推進到該階。`startRun`→`applyTrials(api)` 用每個 skill「目前最高階」的程式碼包 try/catch（出錯退回內建版）覆蓋 api[id]——「你的程式碼就是你勇者的能力」。
+   - 仍是**軟性**門檻：弱版照樣能玩，升級只是變強；硬門檻留待之後。
+   - UI：可修煉 helper 對玩家稱 **skill**，`#skillbar` 顯示等級（✓頂階／◐部分/●可練 Lv1/🔒未解鎖、`id Lv n/max`），點 chip 進入修煉場（無獨立按鈕，`openDojo(id)`）。dojo 一次只練「下一階」，過了自動進到再下一階。
+   - 待辦：`moveToward`/`explore` 這類「重寫很痛」的才是 skill 系統真正發光處，但需先補「跨回合持久記憶」primitive；多階的高階版（如 nearest 依路徑距離）也卡在同一個 primitive。
 
 ## 關卡難度曲線（已用無頭模擬驗證可通關）
 
-L1 走廊（初始腳本可過）→ L2 毒沼（需喝藥水）→ L3 迷宮 → L4 亂鬥（需目標優先序）→ L5 Boss（需戰前囤藥水；繞 Boss 衝樓梯也是合法速通）。
+L1 走廊（初始腳本可過）→ L2 毒沼（需喝藥水）→ L3 迷宮 → L4 亂鬥（需目標優先序）→ L5 Boss（需戰前囤藥水；繞 Boss 衝樓梯也是合法速通）→ L6 散兵坑道（敵人四散＋藥水有限，需 distance/nearest 排目標＋低血回血；naive/smart 死、pro/stock 過，hint 導引玩家去練 skill）。
 
 ## 驗證方法（重要慣例）
 
-改動引擎或關卡後跑 `node test/headless.js`：連通性檢查（每關樓梯/道具 BFS 可達）＋ 難度曲線矩陣（naive 應死在 L2、stock 應通 L5 等）＋ explore(dir) 方向 tie-break 機制檢查，共 12 個案例。曾靠這個抓到視野穿牆、無限空轉、尋路卡死、smart 腳本永遠風箏、explore 朝樓梯漂移破壞 L2 教學等 bug。測試靠 sloppy-mode direct eval 取得遊戲內部狀態，測試檔不可加 "use strict"。
+改動引擎或關卡後跑 `node test/headless.js`：連通性檢查（每關樓梯/道具 BFS 可達）＋ 難度曲線矩陣（naive 應死在 L2、stock 應通 L5 等）＋ explore(dir) 方向 tie-break 檢查＋多階 skill 機制檢查（內建 nearest 是弱版、各階參考實作通過、弱版被 Lv1 測試擋下），共 16 個案例。曾靠這個抓到視野穿牆、無限空轉、尋路卡死、smart 腳本永遠風箏、explore 朝樓梯漂移破壞 L2 教學等 bug。測試靠 sloppy-mode direct eval 取得遊戲內部狀態，測試檔不可加 "use strict"。
 
 ## 待決：正式版直譯器選型（影響 ES6 支援）
 
@@ -41,6 +49,6 @@ prototype 實測：玩家腳本「直線邏輯」可用 ES6（const/箭頭函式
 
 ## 已知限制 / 待辦
 
-- localStorage 存檔（key: `codeDungeonProtoV2`）綁瀏覽器與檔案路徑，不跨裝置；如需要可加匯出/匯入按鈕。同一 key 下另存 `snippets`（程式碼片段，編輯器下方 bar，選取存片段／點名稱貼到游標處，首次給 3 個預設片段）與 `code`（編輯器內容）。
+- localStorage 存檔（key: `codeDungeonProtoV2`）綁瀏覽器與檔案路徑，不跨裝置；如需要可加匯出/匯入按鈕。同一 key 下另存 `code`（編輯器內容）與 `trials`（各 skill 的 `{level, codes:{階:程式碼}}`；相容舊 `{code, done}`）。（註：code snippet 功能已移除，因與 skill 機制定位衝突。）
 - 玩家自訂函式內呼叫行動函式靠 regex 轉換，邊角案例可能失敗（換直譯器後根治）。
 - 數值平衡僅以驗證腳本粗調：hero 50HP/atk6、slime 10/3、goblin 18/5、boss 32/7、藥水+30、毒沼-4。

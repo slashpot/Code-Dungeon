@@ -28,17 +28,39 @@
   #stats { margin-top: 8px; font-size: 12px; color: #B4B2A9; }
   #log { margin-top: 10px; height: 220px; overflow-y: auto; background: #1c1c1b; border: 1px solid #333; border-radius: 6px; padding: 8px 10px; font-family: Consolas, Menlo, monospace; font-size: 12px; line-height: 1.7; }
   #log .bad { color: #F09595; } #log .good { color: #9FE1CB; } #log .warn { color: #FAC775; } #log .sys { color: #888780; }
-  #snippets { padding: 8px 14px; border-top: 1px solid #333; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-  #snippets .label { font-size: 12px; color: #888780; }
-  #snippets button.save { padding: 3px 10px; font-size: 12px; }
-  .snippet { display: inline-flex; align-items: center; gap: 5px; background: #232322; border: 1px solid #444; border-radius: 12px; padding: 2px 4px 2px 10px; font-size: 12px; }
-  .snippet .name { cursor: pointer; color: #9FE1CB; }
-  .snippet .name:hover { text-decoration: underline; }
-  .snippet .del { cursor: pointer; color: #888780; border: none; background: transparent; padding: 0 4px; font-size: 13px; line-height: 1; border-radius: 50%; }
-  .snippet .del:hover { color: #F09595; background: #333; }
+  #skillbar { padding: 8px 14px; border-top: 1px solid #333; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  #skillbar .label { font-size: 12px; color: #888780; }
+  .skill-chip { display: inline-flex; align-items: center; gap: 5px; border-radius: 12px; padding: 3px 11px; font-size: 12px; cursor: pointer; font-family: Consolas, Menlo, monospace; border: 1px solid #444; background: #232322; }
+  .skill-chip:hover { border-color: #1D9E75; }
+  .skill-chip.trained { border-color: #1D9E75; background: #15251f; color: #9FE1CB; }
+  .skill-chip.partial { border-color: #FAC775; color: #FAC775; }
+  .skill-chip.locked { color: #888780; }
+  .skill-chip .mark { font-size: 11px; }
   details { padding: 8px 14px; border-top: 1px solid #333; font-size: 12px; }
   details code { color: #85B7EB; }
   details td { padding: 2px 10px 2px 0; vertical-align: top; color: #B4B2A9; }
+  /* 修煉場 */
+  #dojo { display: none; position: fixed; inset: 0; background: #161615; z-index: 50; flex-direction: column; }
+  #dojo.show { display: flex; }
+  #dojo .dtop { display: flex; align-items: center; gap: 14px; padding: 10px 16px; border-bottom: 1px solid #333; }
+  #dojo .dtop h2 { font-size: 15px; margin: 0; color: #F1EFE8; font-weight: 600; }
+  #dojo .dbody { display: flex; flex: 1; min-height: 0; }
+  #triallist { width: 240px; border-right: 1px solid #333; overflow-y: auto; padding: 8px; flex: none; }
+  .trial-item { padding: 10px 12px; border: 1px solid #333; border-radius: 6px; margin-bottom: 8px; cursor: pointer; }
+  .trial-item:hover { background: #1f1f1e; }
+  .trial-item.active { border-color: #1D9E75; background: #15251f; }
+  .trial-item.locked { opacity: 0.45; cursor: not-allowed; }
+  .trial-item .tname { font-size: 13px; color: #F1EFE8; }
+  .trial-item .tstat { font-size: 11px; margin-top: 3px; }
+  .tstat.done { color: #9FE1CB; } .tstat.open { color: #FAC775; } .tstat.lock { color: #888780; }
+  #trialdetail { flex: 1; display: flex; flex-direction: column; min-width: 0; padding: 14px 18px; overflow-y: auto; }
+  #trialdetail h3 { margin: 0 0 4px; font-size: 15px; color: #F1EFE8; }
+  #trialdetail .sig { font-family: Consolas, Menlo, monospace; color: #85B7EB; font-size: 13px; margin-bottom: 8px; }
+  #trialdetail .desc { font-size: 13px; color: #C7C5BC; line-height: 1.6; white-space: pre-wrap; }
+  #trialeditor { width: 100%; box-sizing: border-box; height: 220px; background: #1c1c1b; color: #D3D1C7; border: 1px solid #333; border-radius: 6px; outline: none; resize: vertical; padding: 10px 12px; font-family: Consolas, Menlo, monospace; font-size: 13px; line-height: 1.6; tab-size: 2; margin: 8px 0; }
+  #trialresult { font-family: Consolas, Menlo, monospace; font-size: 12px; line-height: 1.7; margin-top: 8px; }
+  #trialresult .pass { color: #9FE1CB; } #trialresult .fail { color: #F09595; } #trialresult .head { color: #F1EFE8; font-weight: 600; }
+  .secitem { color: #888780; }
 </style>
 </head>
 <body>
@@ -75,15 +97,15 @@ if (enemies.length > 0) {
 } else {
   explore();
 }</textarea>
-    <div id="snippets">
-      <button id="savesnippet" class="save">＋ 儲存片段</button>
-      <span class="label">（選取一段程式碼再存；沒選取則存整份。點名稱貼到游標處）</span>
-      <span id="snippetlist"></span>
+    <div id="skillbar">
+      <span class="label">技能 skills（點一下進入修煉場練習；練成後闖關會用你的實作）</span>
+      <span id="skilllist"></span>
     </div>
     <details>
-      <summary>API 參考（v0，共 13 個）</summary>
+      <summary>API 參考（v0，共 14 個）</summary>
       <table>
         <tr><td><code>alive()</code></td><td>是否存活（寫明確迴圈時用，非必要）</td><td><code>move(dir)</code></td><td>朝 "up/down/left/right" 走一步</td></tr>
+        <tr><td><code>myPos()</code></td><td>勇者目前座標 {x, y}</td><td><code>explore(dir?)</code></td><td>見上（含方向參數）</td></tr>
         <tr><td><code>hp()</code></td><td>目前生命值</td><td><code>moveToward(t)</code></td><td>朝目標走一步（會穿毒沼，不會繞）</td></tr>
         <tr><td><code>hasPotion()</code></td><td>身上是否有藥水</td><td><code>attack(t)</code></td><td>攻擊相鄰目標（射程 1）</td></tr>
         <tr><td><code>getEnemies()</code></td><td>視野內敵人 [{x,y,hp,type}]</td><td><code>drinkPotion()</code></td><td>喝藥水，回 30 HP</td></tr>
@@ -107,6 +129,18 @@ if (enemies.length > 0) {
     <div id="stats">回合 0 ・ 擊殺 0 ・ 受傷 0</div>
     <div id="record" style="margin-top:4px;font-size:12px;color:#888780;"></div>
     <div id="log"></div>
+  </div>
+</div>
+
+<div id="dojo">
+  <div class="dtop">
+    <button id="dojoback">← 返回地牢</button>
+    <h2>🜂 修煉場 — 親手實作勇者的能力</h2>
+    <span style="font-size:12px;color:#888780;">通過所有測試即完成修煉，你的實作會在闖關時取代內建版本。</span>
+  </div>
+  <div class="dbody">
+    <div id="triallist"></div>
+    <div id="trialdetail"></div>
   </div>
 </div>
 
@@ -162,6 +196,15 @@ var LEVELS = [
     "#.!..#..g..#",
     "#....+..B.>#",
     "#.!..#.....#",
+    "############"
+  ]},
+  { name: "散兵坑道", hint: "敵人四散、藥水有限——用 distance/nearest 排定先打誰、別繞遠路。建議先到下方 skills 把這兩個練起來。", map: [
+    "############",
+    "#h..~...g..#",
+    "#.g..#.....#",
+    "#..!.s.#.!.#",
+    "#....#...g.#",
+    "#..g.~....>#",
     "############"
   ]}
 ];
@@ -438,12 +481,10 @@ function makeApi() {
     getEnemies: function () { return state.enemies.filter(function (e) { return visibleNow(e.x, e.y); }).map(snap); },
     getItems: function () { return state.items.filter(function (i) { return state.seen[posKey(i.x, i.y)]; }).map(function (i) { return { x: i.x, y: i.y, type: i.type }; }); },
     getStairs: function () { return state.seen[posKey(state.stairs.x, state.stairs.y)] ? { x: state.stairs.x, y: state.stairs.y } : null; },
+    myPos: function () { return { x: state.hero.x, y: state.hero.y }; },
     distance: function (t) { return manhattan(state.hero.x, state.hero.y, t.x, t.y); },
-    nearest: function (list) {
-      var best = null, bd = Infinity;
-      for (var i = 0; i < list.length; i++) { var d = manhattan(state.hero.x, state.hero.y, list[i].x, list[i].y); if (d < bd) { bd = d; best = list[i]; } }
-      return best;
-    },
+    // Lv0 弱版：沒有距離意識，直接回傳清單第一個——去修煉場練 nearest 才會真的挑最近/挑好打的
+    nearest: function (list) { return (list && list.length) ? list[0] : null; },
     move: async function (dir) {
       loopGuard = 0;
       var d = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] }[dir];
@@ -609,6 +650,7 @@ async function startRun() {
   setRunBtn(true);
   addLog("=== 開始執行 ===", "sys");
   var api = makeApi();
+  applyTrials(api);   // 用玩家在修煉場完成的實作覆蓋對應的內建函式
   try {
     var code = transformPlayerCode(document.getElementById("editor").value);
     var keys = Object.keys(api);
@@ -629,8 +671,269 @@ async function startRun() {
 }
 
 /* ============================================================
+ * 10.5) 修煉場（dojo）— 玩家親手實作 helper，測試全過即解鎖；
+ *       完成的實作會在 startRun 時注入，取代內建版本。
+ * ============================================================ */
+// 每個 skill 有多階（levels）。內建版＝Lv0（弱版），修煉通過某階＝解鎖該階的實作並注入。
+// distance：入門用，1 階（內建版仍正確，練它＝熟悉修煉流程＋換成自己的）。
+// nearest：內建 Lv0 是「弱版」＝直接回傳清單第一個（沒有距離意識）；Lv1 真正最近、Lv2 平手挑血量低的。
+var TRIALS = [
+  {
+    id: "distance", name: "測距 · distance", sig: "distance(t)", needs: [],
+    desc: "回傳勇者目前位置到目標 t 的曼哈頓距離。用 myPos() 取得自己的座標。",
+    levels: [
+      {
+        lv: 1, name: "Lv1 曼哈頓距離",
+        desc: "曼哈頓距離 = |dx| + |dy|。",
+        starter: "function distance(t) {\n  var me = myPos();\n  // 回傳 me 到 t 的曼哈頓距離\n\n}",
+        cases: [
+          { pos: { x: 2, y: 2 }, args: [{ x: 2, y: 2 }], expect: 0, show: "在 (2,2) → (2,2) ＝ 0" },
+          { pos: { x: 0, y: 0 }, args: [{ x: 3, y: 0 }], expect: 3, show: "在 (0,0) → (3,0) ＝ 3" },
+          { pos: { x: 5, y: 5 }, args: [{ x: 2, y: 1 }], expect: 7, show: "在 (5,5) → (2,1) ＝ 7" },
+          { pos: { x: 1, y: 4 }, args: [{ x: 4, y: 2 }], expect: 5, show: "（隱藏案例）" }
+        ]
+      }
+    ]
+  },
+  {
+    id: "nearest", name: "尋近 · nearest", sig: "nearest(list)", needs: ["distance"],
+    desc: "回傳 list 中最該選的目標（可呼叫你修煉好的 distance）。\n內建弱版只會回傳清單第一個——修煉它才會真的挑最近、挑好打的。",
+    levels: [
+      {
+        lv: 1, name: "Lv1 最近的",
+        desc: "回傳 list 中離 myPos() 最近的元素。\n• 平手時取清單中較前面的\n• list 為空時回傳 null",
+        starter: "function nearest(list) {\n  // 回傳 list 中離 myPos() 最近的元素；空清單回傳 null\n\n}",
+        cases: [
+          { pos: { x: 0, y: 0 }, args: [[]], expect: null, show: "空清單 → null" },
+          { pos: { x: 0, y: 0 }, args: [[{ x: 5, y: 0 }, { x: 2, y: 0 }, { x: 9, y: 0 }]], expectIdx: 1, show: "取最近的 (2,0)" },
+          { pos: { x: 3, y: 3 }, args: [[{ x: 3, y: 1 }, { x: 1, y: 3 }]], expectIdx: 0, show: "平手(各距 2) → 取較前者" },
+          { pos: { x: 4, y: 4 }, args: [[{ x: 4, y: 7 }, { x: 6, y: 4 }, { x: 0, y: 4 }]], expectIdx: 1, show: "（隱藏案例）" }
+        ]
+      },
+      {
+        lv: 2, name: "Lv2 挑好打的",
+        desc: "距離仍優先；但距離並列時，改取 hp 最低的（更快清場、少挨打）。\n• 完全並列(距離與 hp 都相同)取較前者\n• 提示：元素帶有 hp 欄位",
+        starter: "function nearest(list) {\n  // Lv2：先比距離；距離相同再比 hp（小的優先）\n\n}",
+        cases: [
+          { pos: { x: 0, y: 0 }, args: [[{ x: 2, y: 0, hp: 18 }, { x: 0, y: 2, hp: 5 }]], expectIdx: 1, show: "各距 2 → 取 hp 5 的" },
+          { pos: { x: 0, y: 0 }, args: [[{ x: 1, y: 0, hp: 30 }, { x: 5, y: 0, hp: 1 }]], expectIdx: 0, show: "距離優先：取近的(雖然 hp 高)" },
+          { pos: { x: 0, y: 0 }, args: [[{ x: 3, y: 0, hp: 10 }, { x: 0, y: 3, hp: 10 }, { x: 1, y: 0, hp: 9 }]], expectIdx: 2, show: "唯一最近(距 1) → 取它" },
+          { pos: { x: 0, y: 0 }, args: [[{ x: 0, y: 2, hp: 12 }, { x: 2, y: 0, hp: 4 }]], expectIdx: 1, show: "（隱藏案例）" }
+        ]
+      }
+    ]
+  }
+];
+var DOJO_SEL = null;       // 目前選取的 skill id
+var DOJO_LV = 1;           // 目前正在修煉/檢視的階數
+var TRIAL_POS = { x: 0, y: 0 }; // 驗證時注入給 myPos() 的座標（逐案設定）
+
+function getTrials() { var t = loadSave().trials; return t || {}; }
+// 讀取某 skill 的進度，相容舊存檔格式 {code, done}
+function skillRec(id) {
+  var t = getTrials()[id];
+  if (!t) return { level: 0, codes: {} };
+  if (typeof t.level === "number") return { level: t.level, codes: t.codes || {} };
+  if (t.done) return { level: 1, codes: { 1: t.code } };   // 舊格式遷移
+  return { level: 0, codes: {} };
+}
+function skillLevel(id) { return skillRec(id).level; }
+function skillCodes(id) { return skillRec(id).codes; }
+function trialDef(id) { for (var i = 0; i < TRIALS.length; i++) if (TRIALS[i].id === id) return TRIALS[i]; return null; }
+function trialDone(id) { return skillLevel(id) >= 1; }               // 至少 Lv1 ＝ 已開始修煉
+function trialUnlocked(trial) { return (trial.needs || []).every(trialDone); }
+function workingLevel(trial) { var lv = skillLevel(trial.id), max = trial.levels.length; return lv < max ? lv + 1 : max; }
+
+// 把一組 {id: 程式碼字串} 編成 {id: 函式}，myPos 由外部提供（注入或驗證 stub）
+function buildTrialFns(myPosFn, idToCode) {
+  var ids = Object.keys(idToCode), body = "";
+  for (var i = 0; i < ids.length; i++) body += "\n" + idToCode[ids[i]] + "\n";
+  body += "\nreturn {" + ids.map(function (i) { return i + ":" + i; }).join(",") + "};";
+  return (new Function("myPos", body))(myPosFn);
+}
+// 蒐集某 skill 所需的前置實作（用前置 skill「目前最高階」的程式碼），遞迴
+function gatherNeeds(trial, map) {
+  (trial.needs || []).forEach(function (nid) {
+    if (map[nid]) return;
+    var lv = skillLevel(nid), code = skillCodes(nid)[lv];
+    if (code) map[nid] = code;
+    var nt = trialDef(nid); if (nt) gatherNeeds(nt, map);
+  });
+}
+
+function levelTag(trial) {
+  var lv = skillLevel(trial.id), max = trial.levels.length;
+  return max > 1 ? "Lv" + lv + "/" + max : (lv >= 1 ? "✓" : "Lv0");
+}
+
+function renderTrialList() {
+  var box = document.getElementById("triallist");
+  box.innerHTML = "";
+  TRIALS.forEach(function (trial) {
+    var lv = skillLevel(trial.id), max = trial.levels.length, unlocked = trialUnlocked(trial);
+    var item = document.createElement("div");
+    item.className = "trial-item" + (DOJO_SEL === trial.id ? " active" : "") + (unlocked ? "" : " locked");
+    var nm = document.createElement("div"); nm.className = "tname"; nm.textContent = trial.name;
+    var st = document.createElement("div");
+    if (!unlocked) { st.className = "tstat lock"; st.textContent = "🔒 需先完成：" + trial.needs.join("、"); }
+    else if (lv >= max) { st.className = "tstat done"; st.textContent = "✓ 已達頂階 Lv" + lv; }
+    else { st.className = "tstat open"; st.textContent = (lv === 0 ? "● 可修煉 Lv1" : "● 目前 Lv" + lv + "，可修煉 Lv" + (lv + 1)); }
+    item.appendChild(nm); item.appendChild(st);
+    if (unlocked) item.addEventListener("click", function () { selectTrial(trial.id); });
+    box.appendChild(item);
+  });
+}
+
+function selectTrial(id) {
+  DOJO_SEL = id;
+  renderTrialList();
+  var trial = trialDef(id);
+  var detail = document.getElementById("trialdetail");
+  detail.innerHTML = "";
+  var h = document.createElement("h3"); h.textContent = trial.name + "（" + levelTag(trial) + "）";
+  var sig = document.createElement("div"); sig.className = "sig"; sig.textContent = trial.sig;
+  var desc = document.createElement("div"); desc.className = "desc"; desc.textContent = trial.desc;
+  detail.appendChild(h); detail.appendChild(sig); detail.appendChild(desc);
+  if (!trialUnlocked(trial)) {
+    var lock = document.createElement("div"); lock.className = "desc"; lock.style.marginTop = "12px"; lock.style.color = "#FAC775";
+    lock.textContent = "🔒 此技能尚未解鎖，請先完成：" + trial.needs.join("、");
+    detail.appendChild(lock);
+    return;
+  }
+  var lv = skillLevel(id), max = trial.levels.length;
+  DOJO_LV = workingLevel(trial);
+  var ldef = trial.levels[DOJO_LV - 1];
+  var lvHead = document.createElement("div"); lvHead.className = "desc"; lvHead.style.marginTop = "12px"; lvHead.style.color = "#85B7EB";
+  lvHead.textContent = (lv >= max ? "已達頂階，可微調 " : "正在修煉 ") + ldef.name + "：";
+  var lvDesc = document.createElement("div"); lvDesc.className = "desc"; lvDesc.textContent = ldef.desc;
+  detail.appendChild(lvHead); detail.appendChild(lvDesc);
+  var ed = document.createElement("textarea"); ed.id = "trialeditor"; ed.spellcheck = false;
+  ed.value = skillCodes(id)[DOJO_LV] || ldef.starter;
+  ed.addEventListener("keydown", function (e) {
+    if (e.key === "Tab") { e.preventDefault(); var s = ed.selectionStart; ed.value = ed.value.slice(0, s) + "  " + ed.value.slice(ed.selectionEnd); ed.selectionStart = ed.selectionEnd = s + 2; }
+  });
+  var btn = document.createElement("button"); btn.className = "primary"; btn.textContent = "▶ 驗證 " + ldef.name;
+  btn.addEventListener("click", function () { validateTrial(trial); });
+  var res = document.createElement("div"); res.id = "trialresult";
+  detail.appendChild(ed); detail.appendChild(btn); detail.appendChild(res);
+}
+
+function caseExpected(c) {
+  if ("expectIdx" in c) return c.args[0][c.expectIdx];
+  return c.expect;
+}
+function casePass(c, got) {
+  var exp = caseExpected(c);
+  if (exp === null || exp === undefined) return got === null || got === undefined;
+  if ("expectIdx" in c) return !!got && got.x === exp.x && got.y === exp.y;
+  return got === exp;
+}
+function fmt(v) {
+  if (v === null || v === undefined) return String(v);
+  if (typeof v === "object") return "{x:" + v.x + ",y:" + v.y + (typeof v.hp === "number" ? ",hp:" + v.hp : "") + "}";
+  return String(v);
+}
+
+function validateTrial(trial) {
+  var code = document.getElementById("trialeditor").value;
+  var res = document.getElementById("trialresult");
+  res.innerHTML = "";
+  var ldef = trial.levels[DOJO_LV - 1];
+  // 編譯（含前置 skill 目前最高階的實作）
+  var map = {}; gatherNeeds(trial, map); map[trial.id] = code;
+  var fns;
+  try {
+    fns = buildTrialFns(function () { return { x: TRIAL_POS.x, y: TRIAL_POS.y }; }, map);
+    if (typeof fns[trial.id] !== "function") throw new Error("找不到名為 " + trial.id + " 的函式宣告");
+  } catch (e) {
+    var er = document.createElement("div"); er.className = "fail";
+    er.textContent = "✗ 程式無法編譯：" + (e.message || e); res.appendChild(er); return;
+  }
+  var fn = fns[trial.id], allPass = true;
+  ldef.cases.forEach(function (c, i) {
+    TRIAL_POS = c.pos;
+    var got, err = null;
+    try { got = fn.apply(null, c.args); } catch (e) { err = e; }
+    var ok = !err && casePass(c, got);
+    if (!ok) allPass = false;
+    var line = document.createElement("div");
+    line.className = ok ? "pass" : "fail";
+    line.textContent = (ok ? "✓" : "✗") + " 案例 " + (i + 1) + "：" + c.show +
+      (ok ? "" : err ? "（錯誤：" + err.message + "）" : "（預期 " + fmt(caseExpected(c)) + "，實得 " + fmt(got) + "）");
+    res.appendChild(line);
+  });
+  // 存進度：保留本階程式碼；全過則把等級推進到本階
+  var rec = skillRec(trial.id);
+  rec.codes[DOJO_LV] = code;
+  if (allPass && DOJO_LV > rec.level) rec.level = DOJO_LV;
+  var trials = getTrials(); trials[trial.id] = { level: rec.level, codes: rec.codes };
+  save({ trials: trials });
+  var head = document.createElement("div"); head.className = "head";
+  if (allPass) {
+    head.className = "head pass";
+    var max = trial.levels.length;
+    head.textContent = "🎉 " + ldef.name + " 修煉完成！闖關時 " + trial.sig + " 會用這個版本。" +
+      (rec.level < max ? "（已解鎖 Lv" + (rec.level + 1) + "）" : "（已達頂階）");
+    renderTrialList(); renderSkillBar();
+    setTimeout(function () { selectTrial(trial.id); }, 600); // 自動進到下一階
+  } else {
+    head.textContent = "還沒全過，再調整看看。";
+  }
+  res.insertBefore(head, res.firstChild);
+}
+
+// 注入：把每個 skill「目前最高階」的實作覆蓋到 dungeon API（出錯時安全退回內建版）
+function applyTrials(api) {
+  var idToCode = {};
+  TRIALS.forEach(function (t) { var lv = skillLevel(t.id); if (lv >= 1) { var code = skillCodes(t.id)[lv]; if (code) idToCode[t.id] = code; } });
+  if (!Object.keys(idToCode).length) return;
+  var fns;
+  try { fns = buildTrialFns(api.myPos, idToCode); }
+  catch (e) { addLog("修煉實作載入失敗，全部暫用內建版：" + e.message, "warn"); return; }
+  Object.keys(fns).forEach(function (id) {
+    var builtin = api[id], impl = fns[id];
+    api[id] = function () {
+      try { return impl.apply(this, arguments); }
+      catch (e) { addLog("修煉函式 " + id + "() 出錯，這次用內建版：" + e.message, "warn"); return builtin.apply(this, arguments); }
+    };
+  });
+  addLog("已套用你的修煉實作：" + Object.keys(fns).map(function (id) { return id + " " + levelTag(trialDef(id)); }).join("、"), "sys");
+}
+
+// 編輯器下方的 skill 區塊：顯示等級狀態，點擊進入該 skill 的修煉場
+function renderSkillBar() {
+  var box = document.getElementById("skilllist");
+  if (!box) return;
+  box.innerHTML = "";
+  TRIALS.forEach(function (trial) {
+    var lv = skillLevel(trial.id), max = trial.levels.length, unlocked = trialUnlocked(trial);
+    var chip = document.createElement("span");
+    var cls = !unlocked ? " locked" : lv >= max ? " trained" : lv >= 1 ? " partial" : "";
+    chip.className = "skill-chip" + cls;
+    var mark = document.createElement("span"); mark.className = "mark";
+    mark.textContent = !unlocked ? "🔒" : lv >= max ? "✓" : lv >= 1 ? "◐" : "●";
+    var name = document.createElement("span");
+    name.textContent = trial.id + " " + (max > 1 ? "Lv" + lv + "/" + max : (lv >= 1 ? "✓" : "Lv0"));
+    chip.appendChild(mark); chip.appendChild(name);
+    chip.title = (!unlocked ? "未解鎖（需先完成 " + trial.needs.join("、") + "）" : lv >= max ? "已達頂階" : lv >= 1 ? "目前 Lv" + lv + "，可再升級" : "內建弱版，點擊去修煉") + "：" + trial.sig + " — 點擊進入修煉場";
+    chip.addEventListener("click", function () { openDojo(trial.id); });
+    box.appendChild(chip);
+  });
+}
+
+function openDojo(id) {
+  document.getElementById("dojo").classList.add("show");
+  renderTrialList();
+  var target = (id && trialDef(id)) ? id : null;
+  if (!target) { if (!DOJO_SEL || !trialDef(DOJO_SEL)) DOJO_SEL = null; target = DOJO_SEL || TRIALS[0].id; }
+  selectTrial(target);
+}
+function closeDojo() { document.getElementById("dojo").classList.remove("show"); renderSkillBar(); }
+
+/* ============================================================
  * 11) 事件繫結與啟動
  * ============================================================ */
+document.getElementById("dojoback").addEventListener("click", closeDojo);
 document.getElementById("runbtn").addEventListener("click", function () {
   if (running) { stopFlag = true; if (stepResolve) stepResolve(); }
   else { paused = false; setPauseUi(); startRun(); }
@@ -651,74 +954,6 @@ document.getElementById("resetbtn").addEventListener("click", function () {
     }, 50);
   } else reset();
 });
-/* ---------- 程式碼片段（snippets）：存常用寫法、點一下貼到游標處 ---------- */
-var DEFAULT_SNIPPETS = [
-  { name: "喝藥水保命", code: "if (hp() < 25 && hasPotion()) drinkPotion();" },
-  { name: "打最近敵人", code: "var es = getEnemies();\nif (es.length > 0) {\n  var t = nearest(es);\n  if (distance(t) <= 1) attack(t); else moveToward(t);\n}" },
-  { name: "撿光道具再走", code: "if (getEnemies().length === 0 && getItems().length > 0) moveToward(getItems()[0]);" }
-];
-function getSnippets() {
-  var s = loadSave();
-  if (!s.snippets) return DEFAULT_SNIPPETS.slice();  // 首次：用預設片段
-  return s.snippets;
-}
-function renderSnippets() {
-  var list = document.getElementById("snippetlist");
-  list.innerHTML = "";
-  var snips = getSnippets();
-  for (var i = 0; i < snips.length; i++) {
-    (function (snip, idx) {
-      var chip = document.createElement("span");
-      chip.className = "snippet";
-      var name = document.createElement("span");
-      name.className = "name"; name.textContent = snip.name;
-      name.title = snip.code;
-      name.addEventListener("click", function () { insertSnippet(snip.code); });
-      var del = document.createElement("button");
-      del.className = "del"; del.textContent = "✕"; del.title = "刪除此片段";
-      del.addEventListener("click", function () { deleteSnippet(idx); });
-      chip.appendChild(name); chip.appendChild(del);
-      list.appendChild(chip);
-    })(snips[i], i);
-  }
-}
-function insertSnippet(code) {
-  var ed = document.getElementById("editor");
-  var s = ed.selectionStart, e = ed.selectionEnd;
-  ed.value = ed.value.slice(0, s) + code + ed.value.slice(e);
-  ed.selectionStart = ed.selectionEnd = s + code.length;
-  ed.focus();
-  save({ code: ed.value });
-}
-function saveSnippet() {
-  var ed = document.getElementById("editor");
-  var sel = ed.value.slice(ed.selectionStart, ed.selectionEnd);
-  var code = (sel.length ? sel : ed.value).replace(/^\s+|\s+$/g, "");
-  if (!code) { alert("沒有可儲存的內容。"); return; }
-  var name = prompt("片段名稱：", sel.length ? "" : "我的腳本");
-  if (name === null) return;
-  name = name.replace(/^\s+|\s+$/g, "");
-  if (!name) return;
-  var snips = getSnippets();
-  var existing = -1;
-  for (var i = 0; i < snips.length; i++) if (snips[i].name === name) existing = i;
-  if (existing >= 0) {
-    if (!confirm('已有同名片段「' + name + '」，要覆蓋嗎？')) return;
-    snips[existing] = { name: name, code: code };
-  } else snips.push({ name: name, code: code });
-  save({ snippets: snips });
-  renderSnippets();
-}
-function deleteSnippet(idx) {
-  var snips = getSnippets();
-  if (idx < 0 || idx >= snips.length) return;
-  if (!confirm('刪除片段「' + snips[idx].name + '」？')) return;
-  snips.splice(idx, 1);
-  save({ snippets: snips });
-  renderSnippets();
-}
-document.getElementById("savesnippet").addEventListener("click", saveSnippet);
-
 document.getElementById("reseteditorbtn").addEventListener("click", function () {
   if (running) return;
   if (!confirm("還原成初始腳本？目前編輯器內的程式碼會被覆蓋。")) return;
@@ -787,7 +1022,7 @@ loadLevel(Math.min(loadSave().cur || 0, unlockedCount() - 1));
       lg.scrollTop = lg.scrollHeight;
     }
     renderRecord();
-    renderSnippets();
+    renderSkillBar();
     var tmr = null;
     ed.addEventListener("input", function () {
       clearTimeout(tmr);
