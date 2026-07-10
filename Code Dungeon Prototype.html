@@ -148,17 +148,18 @@ if (enemies.length > 0) {
 "use strict";
 
 /* ============================================================
- * 1) 關卡資料 — 新增關卡只要加一個 {name, hint, map} 物件
+ * 1) 關卡資料 — 新增關卡只要加一個 {name, hint, map, par} 物件
+ *    par＝目標回合數（軟激勵，用 test/headless.js 參考腳本的 turns 校準）
  *    圖例：# 牆 ｜ ~ 毒沼 ｜ ! 藥水 ｜ > 樓梯 ｜ h 勇者出生點
  *          s/g/B 敵人（數值見 ENEMY_DEF）
  * ============================================================ */
 var LEVELS = [
-  { name: "初戰走廊", hint: "基礎：移動與攻擊", map: [
+  { name: "初戰走廊", hint: "基礎：移動與攻擊", par: 15, map: [
     "############",
     "#h..s....g>#",
     "############"
   ]},
-  { name: "毒沼與抉擇", hint: "藥水、地形傷害與路線選擇", map: [
+  { name: "毒沼與抉擇", hint: "藥水、地形傷害與路線選擇", par: 25, map: [
     "############",
     "#......#...#",
     "#.h.s..#.g.#",
@@ -169,7 +170,7 @@ var LEVELS = [
     "#..~~~~>...#",
     "############"
   ]},
-  { name: "迷宮", hint: "樓梯在深處，走錯路有毒沼等著", map: [
+  { name: "迷宮", hint: "樓梯在深處，走錯路有毒沼等著", par: 40, map: [
     "############",
     "#h..#....g.#",
     "##.##.####.#",
@@ -180,7 +181,7 @@ var LEVELS = [
     "#....#.#...#",
     "############"
   ]},
-  { name: "亂鬥大廳", hint: "多敵人：目標的優先順序很重要", map: [
+  { name: "亂鬥大廳", hint: "多敵人：目標的優先順序很重要", par: 45, map: [
     "############",
     "#h.....#...#",
     "#..g...#.!.#",
@@ -190,7 +191,7 @@ var LEVELS = [
     "#....#.....#",
     "############"
   ]},
-  { name: "Boss 房", hint: "歐克頭目擋在樓梯前——硬拚還是衝刺？", map: [
+  { name: "Boss 房", hint: "歐克頭目擋在樓梯前——硬拚還是衝刺？", par: 30, map: [
     "############",
     "#h...#.....#",
     "#.!..#..g..#",
@@ -198,7 +199,7 @@ var LEVELS = [
     "#.!..#.....#",
     "############"
   ]},
-  { name: "散兵坑道", hint: "敵人四散、藥水有限——用 distance/nearest 排定先打誰、別繞遠路。建議先到下方 skills 把這兩個練起來。", map: [
+  { name: "散兵坑道", hint: "敵人四散、藥水有限——用 distance/nearest 排定先打誰、別繞遠路。建議先到下方 skills 把這兩個練起來。", par: 40, map: [
     "############",
     "#h..~...g..#",
     "#.g..#.....#",
@@ -444,10 +445,13 @@ function endRun(win) {
   ov.style.display = "flex";
   document.getElementById("ovtitle").textContent = win ? "通關！" : "你死了";
   document.getElementById("ovtitle").style.color = win ? "#5DCAA5" : "#F09595";
-  document.getElementById("ovstats").textContent = "回合 " + state.turn + " ・ 擊殺 " + state.kills + " ・ 共受到 " + state.dmgTaken + " 點傷害";
+  var par = LEVELS[curLevel].par;
+  var parTxt = (win && par) ? ("／par " + par + (state.turn <= par ? " ⭐" : "")) : "";
+  document.getElementById("ovstats").textContent = "回合 " + state.turn + parTxt + " ・ 擊殺 " + state.kills + " ・ 共受到 " + state.dmgTaken + " 點傷害";
   var hint;
   if (!win) hint = "死因：" + (state.lastHit || "未知") + " ── 改改程式再來一次";
-  else if (curLevel < LEVELS.length - 1) hint = "已解鎖下一關，按 ▶ 前往";
+  else if (par && state.turn > par) hint = "通關了！但比 par 多花 " + (state.turn - par) + " 回合——更聰明的目標選擇（skill）或路線能更快" + (curLevel < LEVELS.length - 1 ? "。按 ▶ 前往下一關" : "");
+  else if (curLevel < LEVELS.length - 1) hint = (par ? "⭐ 低於 par！" : "") + "已解鎖下一關，按 ▶ 前往";
   else hint = "全部通關！試試看：能不能用更少回合、更少受傷？";
   document.getElementById("ovhint").textContent = hint;
   addLog(win ? "=== 通關！ ===" : "=== 死亡（死因：" + (state.lastHit || "未知") + "）===", win ? "good" : "bad");
@@ -606,9 +610,10 @@ function render() {
 function renderRecord() {
   var s = loadSave(), el = document.getElementById("record");
   var rec = (s.levels || {})[curLevel];
-  if (!rec || !rec.attempts) { el.textContent = "本關尚無挑戰紀錄"; return; }
+  var par = LEVELS[curLevel].par;
+  if (!rec || !rec.attempts) { el.textContent = "本關尚無挑戰紀錄" + (par ? "（par " + par + " 回合）" : ""); return; }
   var t = "本關挑戰 " + rec.attempts + " 次 ・ 通關 " + (rec.wins || 0) + " 次";
-  if (rec.best) t += " ・ 最佳 " + rec.best.turns + " 回合（受傷 " + rec.best.dmg + "）";
+  if (rec.best) t += " ・ 最佳 " + rec.best.turns + " 回合" + (par ? "／par " + par + (rec.best.turns <= par ? " ⭐" : "") : "") + "（受傷 " + rec.best.dmg + "）";
   el.textContent = t;
 }
 

@@ -170,7 +170,7 @@ function runCase(name, levelIdx) {
     else if (state.hero.x === state.stairs.x && state.hero.y === state.stairs.y) outcome = "WIN";
     else if (state.turn === 0) outcome = "IDLE";
     else outcome = "ENDED";
-    console.log("DETAIL: turns=" + state.turn + " kills=" + state.kills +
+    console.log("DETAIL: turns=" + state.turn + " par=" + (LEVELS[levelIdx].par || 0) + " kills=" + state.kills +
       " dmg=" + state.dmgTaken + " hp=" + state.hero.hp + (state.lastHit ? " lastHit=" + state.lastHit : ""));
     console.log("RESULT:" + outcome);
   }).catch((e) => { console.log("HARNESS ERROR:", e); console.log("RESULT:ERROR"); });
@@ -185,10 +185,11 @@ function runConnectivityCheck() {
     const widthOk = LEVELS[i].map.every((row) => row.length === W);
     const stairsOk = !!bfs(state.hero.x, state.hero.y, (x, y) => x === state.stairs.x && y === state.stairs.y);
     const itemsOk = state.items.every((it) => !!bfs(state.hero.x, state.hero.y, (x, y) => x === it.x && y === it.y));
-    const lineOk = widthOk && stairsOk && itemsOk;
+    const parOk = typeof LEVELS[i].par === "number" && LEVELS[i].par > 0;
+    const lineOk = widthOk && stairsOk && itemsOk && parOk;
     ok = ok && lineOk;
     console.log("DETAIL: L" + (i + 1) + " " + LEVELS[i].name +
-      " | 等寬:" + widthOk + " 樓梯可達:" + stairsOk + " 道具可達:" + itemsOk);
+      " | 等寬:" + widthOk + " 樓梯可達:" + stairsOk + " 道具可達:" + itemsOk + " par:" + (parOk ? LEVELS[i].par : "缺"));
   }
   console.log("RESULT:" + (ok ? "OK" : "FAIL"));
 }
@@ -315,9 +316,16 @@ function runSuite() {
   for (const [label, lv, scriptName, expected] of EXPECT) {
     const r = spawn({ CASE: scriptName, LV: String(lv) });
     const res = resultOf(r.stdout);
-    const okay = expected.split("|").indexOf(res) !== -1;
+    let okay = expected.split("|").indexOf(res) !== -1;
+    // par 校準檢查：通關的參考腳本回合數必須 ≤ par（par 是玩家做得到的目標）
+    let parNote = "";
+    if (okay && expected === "WIN") {
+      const turns = parseInt(((r.stdout || "").match(/turns=(\d+)/) || [])[1] || "0", 10);
+      const par = parseInt(((r.stdout || "").match(/par=(\d+)/) || [])[1] || "0", 10);
+      if (par > 0 && turns > par) { okay = false; parNote = "（par 校準失敗：" + turns + " > " + par + "）"; }
+    }
     okay ? pass++ : fail++;
-    console.log((okay ? "PASS" : "FAIL") + "  " + label +
+    console.log((okay ? "PASS" : "FAIL") + "  " + label + parNote +
       "  [期望 " + expected + "，實得 " + res + "]  " + detailOf(r.stdout));
   }
 
