@@ -16,6 +16,7 @@
 - [x] ~~好玩度測試（找 2~3 人玩）~~ **改制**（2026-07-24）：實測 1 人，開場即卡住（無教學）——唯一但關鍵的發現：**新手引導是最大的洞**。找人測試成本過高且卡進度，決策改為 side-project 模式：不再以真人測試作為進度關卡，改用非同步管道（公開網頁連結收回饋），「有回饋就看，沒有也照走」。
 - [ ] **新手引導/教學（最高優先）**：L1 前加引導層、初始腳本逐行註解、失敗給指向性提示；驗收=自己以「假裝第一次玩」走一遍。
 - [ ] 正式版方向已定（2026-07-24，見《正式版計劃 — Cyberpunk Coding RPG.md》）：Cyberpunk 世界觀（系統內敘事、API 詞彙不換）、2D 俯視 RPG、解題＋腳本操控並存、Godot（傾向 C#+Jint、桌面優先）。
+- [x] **M0 技術驗證通過**（2026-07-24，`coding-punk/spike/`）：Godot 4.7.1 .NET ＋ Jint 4.14 spike 五項全過——C# 場景可跑、move/attack 委派、**statement-level 逐行步進含行號**（成敗關鍵，`DebugMode`＋`Debugger.Step`）、CodeEdit JS 高亮、無窮迴圈防呆（`MaxStatements` 全速 46ms 攔截＋`CancellationToken` 停止，玩家 JS 的 try/catch 吃不掉）。架構：Jint 跑背景執行緒、每 statement 停在 semaphore 閘門等主執行緒放行→主執行緒架構上不可能被玩家腳本凍死。驗證：`dotnet build` ＋ `Godot --headless`（場景內建兩階段自動驗收，exit 0=PASS）。**不需評估路線 B，可進 M1。**詳見 `coding-punk/spike/README.md`。
 - [ ] 之後：隨機地圖、技能（fireball 等）、放置模式、直譯器換裝；修煉場擴充（moveToward／explore 需先補「跨回合持久記憶」primitive）
 
 ## 已定案的關鍵決策（含理由，勿輕易翻案）
@@ -44,13 +45,9 @@ L1 走廊（初始腳本可過）→ L2 毒沼（需喝藥水）→ L3 迷宮 �
 
 改動引擎或關卡後跑 `node test/headless.js`：連通性檢查（每關樓梯/道具 BFS 可達＋par 存在）＋ 難度曲線矩陣（naive 應死在 L2、stock 應通 L5 等；WIN 案例同時驗證 turns ≤ par）＋ explore(dir) 方向 tie-break 檢查＋多階 skill 機制檢查（內建 nearest 是弱版、各階參考實作通過、弱版被 Lv1 測試擋下），共 16 個案例。曾靠這個抓到視野穿牆、無限空轉、尋路卡死、smart 腳本永遠風箏、explore 朝樓梯漂移破壞 L2 教學等 bug。測試靠 sloppy-mode direct eval 取得遊戲內部狀態，測試檔不可加 "use strict"。
 
-## 待決：正式版直譯器選型（影響 ES6 支援）
+## ~~待決~~ 已定案：正式版直譯器 = Jint（2026-07-24，M0 spike 驗證）
 
-prototype 實測：玩家腳本「直線邏輯」可用 ES6（const/箭頭函式），但在箭頭函式/函式運算式內呼叫行動函式會 SyntaxError（regex 轉換只認 `function name(){}` 宣告式）。三條路：
-1. JS-Interpreter ＋ 守 ES5：逐行高亮最容易（逐 AST 節點執行），玩家語法受限
-2. Babel 轉譯 ES6→ES5 再餵 JS-Interpreter：語法自由，但高亮/錯誤訊息需 source map 映射，工程量大
-3. 換 ES6+ 直譯器（如 Sval）或 WASM（QuickJS）：語法最自由，逐步執行支援度需逐一驗證
-範例腳本目前刻意用 var（ES5），是為了讓選項 1 保持開放。
+正式版走 Godot + C# + **Jint 4.14**，原本三條路的取捨消失：Jint 原生支援完整 ES6+（const/箭頭函式/template string 皆實測通過）、statement-level 逐行步進（`options.DebugMode()`＋`options.InitialStepMode(StepMode.Into)`＋`engine.Debugger.Step` 事件給 `Location.Start.Line`）、雙層防呆（`MaxStatements` 硬上限＋`CancellationToken`，後者丟 `ExecutionCanceledException`，玩家 JS 的 try/catch 攔不到）。prototype 的 regex 轉換 hack 與 ES5 限制**只適用於網頁版**；網頁 prototype 若續留（收回饋用）維持現狀即可，不再投資直譯器換裝。範例腳本仍用 var 是為了與 prototype 相容，非技術限制。spike 細節見 `coding-punk/spike/README.md`。
 
 ## 已知限制 / 待辦
 

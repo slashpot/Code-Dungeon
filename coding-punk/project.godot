@@ -11,7 +11,8 @@ config_version=5
 [application]
 
 config/name="Coding Punk"
-config/features=PackedStringArray("4.7", "GL Compatibility")
+run/main_scene="res://spike/JintSpike.tscn"
+config/features=PackedStringArray("4.7", "C#", "GL Compatibility")
 config/icon="res://icon.svg"
 
 [display]
@@ -21,7 +22,7 @@ window/stretch/aspect="expand"
 
 [dotnet]
 
-project/assembly_name="Coding Punk"
+project/assembly_name="CodingPunk"
 
 [physics]
 
