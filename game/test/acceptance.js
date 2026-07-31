@@ -1,4 +1,4 @@
-// M1 自動驗收：build → 靜態伺服 → headless Chrome 三項驗證 → exit 0 = 全過。
+// 瀏覽器自動驗收（M1＋M2）：build → 靜態伺服 → headless Chrome 六項驗證 → exit 0 = 全過。
 // 慣例對齊 spike-web（npm test）與 prototype（node test/headless.js）。
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
@@ -44,6 +44,7 @@ const hardTimeout = setTimeout(() => fail('整體逾時（90s）'), 90000);
 
 try {
   const page = await browser.newPage();
+  await page.setViewport({ width: 1280, height: 800 });
   page.on('console', (m) => {
     if (m.type() === 'error') console.log(`[page:error] ${m.text()}`);
   });
@@ -90,7 +91,7 @@ try {
     };
   }
 
-  // ③ 場景切換：走到機房門 → 進 dungeon → 走動 → 出來回到街上原位
+  // ③ 進入 dungeon：走到機房門 → 互動 → IDE 模式＋初始腳本已載入
   {
     await walk('right', 2);   // (7,13)
     await walk('up', 9);      // (7,4)
@@ -99,20 +100,65 @@ try {
     const prompt = await g('promptText()');
     const enter = await g('interact()');
     const inDungeon = await g('scene()');
-    const spawn = await g('pos()');
-    await walk('left', 1);
-    await walk('right', 1);
-    await g("step('down')"); // 面向出口
-    const exit = await g('interact()');
-    const backScene = await g('scene()');
-    const backPos = await g('pos()');
-    results.scenes = {
+    const ideVisible = await page.evaluate(() => document.body.classList.contains('ide-mode'));
+    const code = await page.evaluate('window.__dungeon.getCode()');
+    results.enter = {
       pass: faceDoor === 'blocked' && prompt.includes('機房')
         && enter === 'enter-dungeon' && inDungeon === 'dungeon'
-        && spawn.x === 4 && spawn.y === 3
-        && exit === 'exit-dungeon' && backScene === 'city'
-        && backPos.x === 9 && backPos.y === 4,
-      detail: `門提示="${prompt}" 進=${inDungeon}@(${spawn.x},${spawn.y}) 出=${backScene}@(${backPos.x},${backPos.y})`,
+        && ideVisible && code.includes('getEnemies'),
+      detail: `門提示="${prompt}" scene=${inDungeon} ide=${ideVisible} 腳本含getEnemies=${code.includes('getEnemies')}`,
+    };
+  }
+
+  // ④ 初始腳本通關 L1：⚡ 全速 → won、turns ≤ par、有逐行事件、有結算 log
+  {
+    await page.click('#btn-fast');
+    let won = true;
+    try {
+      await page.waitForFunction("window.__dungeon.status() === 'won'", { timeout: 20000 });
+    } catch { won = false; }
+    const turn = await page.evaluate('window.__dungeon.turn()');
+    const par = await page.evaluate('window.__dungeon.par()');
+    const lines = await page.evaluate('window.__dungeon.linesSeen()');
+    const winLog = await page.evaluate("window.__dungeon.logHas('=== 通關')");
+    results.winL1 = {
+      pass: won && turn <= par && lines > 0 && winLog,
+      detail: `won=${won} turns=${turn}/par ${par} 逐行事件=${lines} 通關log=${winLog}`,
+    };
+  }
+
+  // ⑤ 死亡與重來：爛腳本 → dead；還原腳本 → 再通關
+  {
+    await page.click('#dg-close');
+    await page.evaluate(`window.__dungeon.setCode("move('right');")`);
+    await page.click('#btn-fast');
+    let died = true;
+    try {
+      await page.waitForFunction("window.__dungeon.status() === 'dead'", { timeout: 20000 });
+    } catch { died = false; }
+    const deadLog = await page.evaluate("window.__dungeon.logHas('=== 死亡')");
+    await page.click('#dg-close');
+    await page.click('#btn-restore');
+    await page.click('#btn-fast');
+    let rewon = true;
+    try {
+      await page.waitForFunction("window.__dungeon.status() === 'won'", { timeout: 20000 });
+    } catch { rewon = false; }
+    results.deathRetry = {
+      pass: died && deadLog && rewon,
+      detail: `爛腳本死亡=${died} 死亡log=${deadLog} 還原後再通關=${rewon}`,
+    };
+  }
+
+  // ⑥ 回街上：結算面板的「← 回街上」→ 城市、位置保留、IDE 收起
+  {
+    await page.click('#dg-leave');
+    const backScene = await g('scene()');
+    const backPos = await g('pos()');
+    const ideGone = await page.evaluate(() => !document.body.classList.contains('ide-mode'));
+    results.leave = {
+      pass: backScene === 'city' && backPos.x === 9 && backPos.y === 4 && ideGone,
+      detail: `scene=${backScene} pos=(${backPos.x},${backPos.y}) ide收起=${ideGone}`,
     };
   }
 
@@ -120,9 +166,12 @@ try {
   const ITEMS = [
     ['move', '① 逐格移動：程式步進＋真實鍵盤事件'],
     ['collide', '② 碰撞阻擋：grid 查表、位置不變'],
-    ['scenes', '③ 場景切換：機房門進出、街上位置保留'],
+    ['enter', '③ 進入 dungeon：IDE 模式＋初始腳本載入'],
+    ['winL1', '④ 初始腳本通關 L1（含逐行事件與 par）'],
+    ['deathRetry', '⑤ 爛腳本死亡 → 還原 → 再通關'],
+    ['leave', '⑥ 回街上：位置保留、IDE 收起'],
   ];
-  console.log('\n== M1 驗收結果 ==');
+  console.log('\n== 瀏覽器驗收結果 ==');
   let allPass = true;
   for (const [key, title] of ITEMS) {
     const r = results[key] || { pass: false, detail: '無結果' };

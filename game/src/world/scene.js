@@ -49,7 +49,7 @@ export class GridScene {
           g.rect(x * TILE, y * TILE, TILE, TILE).fill(wallColor);
           g.rect(x * TILE, y * TILE, TILE, 3).fill(0x4a5470);
         } else if ((x + y) % 2 === 0) {
-          g.rect(x * TILE, y * TILE, TILE, TILE).fill(0xffffff, 0.015);
+          g.rect(x * TILE, y * TILE, TILE, TILE).fill({ color: 0xffffff, alpha: 0.015 });
         }
       }
     }

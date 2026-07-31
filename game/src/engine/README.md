@@ -1,5 +1,5 @@
-# src/engine/ — M2 移植區
+# src/engine/ — Code Dungeon grid 引擎（純 ES module）
 
-prototype 的 grid 引擎最小集（地圖字串解析、回合 tick、視野 BFS、戰鬥、毒沼/藥水）
-在 M2 抽成**純 ES module**放這裡——node 可直接 import，回歸測試不再走 sloppy-eval。
-對拍 reference＝《prototype/Code Dungeon Prototype.html》內的 JS 引擎（同地圖同腳本逐回合狀態必須一致）。
+自 prototype 移植（M2，2026-07-31）：`engine.js`（createGame＋API v0 14 函式）、`levels.js`（6 關資料＋初始腳本）。
+無 DOM、無 async、確定性——node 可直接 import，`test/engine.test.js` 跑連通性＋L1 案例＋與 prototype 的逐回合對拍。
+對拍 reference＝《prototype/Code Dungeon Prototype.html》：引擎行為改動必須同步 prototype 並讓對拍全綠，否則兩邊分岔。

@@ -50,28 +50,6 @@ export const CITY = {
   },
 };
 
-export const DUNGEON_STUB = {
-  id: 'dungeon',
-  ground: 0x101822,
-  wallColor: 0x2a4050,
-  rows: [
-    '##########',
-    '#........#',
-    '#........#',
-    '#........#',
-    '####<#####',
-  ],
-  legend: {
-    ...BASE,
-    '<': {
-      solid: true, color: 0x53c8e6,
-      prompt: '出口 — Z / Enter 回到街上',
-      action: { type: 'exit-dungeon' },
-    },
-  },
-  spawn: { x: 4, y: 3, facing: 'down' },
-};
-
 export function parseMap(def) {
   const rows = def.rows;
   const h = rows.length;

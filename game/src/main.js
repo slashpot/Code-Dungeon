@@ -1,7 +1,9 @@
-// v0.1-web M1：城市可行走＋dungeon 入口進出。Pixi 場景、鍵盤輸入、場景切換、__game 驗收掛勾。
+// v0.1-web：城市可行走（M1）＋ L1 dungeon 與遊戲內 IDE（M2）。
+// Pixi 場景、鍵盤輸入、城市↔dungeon 模式切換、__game/__dungeon 驗收掛勾。
 import { Application } from 'pixi.js';
-import { CITY, DUNGEON_STUB } from './world/maps.js';
+import { CITY } from './world/maps.js';
 import { GridScene } from './world/scene.js';
+import { createDungeonController } from './dungeon/controller.js';
 
 const VIEW_W = 640;
 const VIEW_H = 416;
@@ -20,39 +22,33 @@ function showMsg(text) {
   msgTimer = setTimeout(() => msgEl.classList.remove('show'), 2600);
 }
 
-const state = { scene: null, scenes: {}, returnPos: null };
+const state = { app: null, scene: null, city: null, dungeonCtl: null };
 
-function currentScene() { return state.scenes[state.scene]; }
+function showCity() {
+  state.app.stage.removeChildren();
+  state.app.stage.addChild(state.city.container);
+  state.scene = 'city';
+  sceneLabelEl.textContent = '霓虹街';
+  state.city.refreshPrompt();
+}
 
-function switchScene(name) {
-  const app = state.app;
-  app.stage.removeChildren();
-  state.scene = name;
-  const scene = currentScene();
-  app.stage.addChild(scene.container);
-  sceneLabelEl.textContent = name === 'city' ? '霓虹街' : '機房（暫代空場景）';
-  scene.refreshPrompt();
+function enterDungeon() {
+  const container = state.dungeonCtl.enter();
+  state.app.stage.removeChildren();
+  state.app.stage.addChild(container);
+  state.scene = 'dungeon';
+  sceneLabelEl.textContent = '機房 — 用腳本操控你的 avatar';
+  promptEl.textContent = '';
 }
 
 function doInteract() {
-  const scene = currentScene();
-  const action = scene.facingCell().action;
+  if (state.scene !== 'city') return null;
+  const action = state.city.facingCell().action;
   if (!action) return null;
   switch (action.type) {
-    case 'enter-dungeon': {
-      state.returnPos = { x: scene.player.x, y: scene.player.y };
-      const spawn = DUNGEON_STUB.spawn;
-      state.scenes.dungeon.setPos(spawn.x, spawn.y, spawn.facing);
-      switchScene('dungeon');
-      showMsg('（M2 之後這裡才是真正的 dungeon＋IDE）');
+    case 'enter-dungeon':
+      enterDungeon();
       break;
-    }
-    case 'exit-dungeon': {
-      const r = state.returnPos;
-      state.scenes.city.setPos(r.x, r.y, 'down');
-      switchScene('city');
-      break;
-    }
     case 'message':
       showMsg(action.text);
       break;
@@ -60,7 +56,7 @@ function doInteract() {
   return action.type;
 }
 
-// ---------- 鍵盤輸入 ----------
+/* ---------- 鍵盤輸入（城市模式限定；dungeon 模式把鍵盤留給編輯器） ---------- */
 const KEY_DIR = {
   ArrowUp: 'up', KeyW: 'up',
   ArrowDown: 'down', KeyS: 'down',
@@ -72,12 +68,12 @@ const held = new Set();
 
 function setupInput() {
   window.addEventListener('keydown', (e) => {
+    if (state.scene !== 'city') return;
     const dir = KEY_DIR[e.code];
     if (dir) {
       e.preventDefault();
       held.add(dir);
-      const scene = currentScene();
-      if (!scene.player.moving) scene.step(dir);
+      if (!state.city.player.moving) state.city.step(dir);
     } else if (INTERACT_KEYS.has(e.code)) {
       e.preventDefault();
       doInteract();
@@ -90,7 +86,7 @@ function setupInput() {
   window.addEventListener('blur', () => held.clear());
 }
 
-// ---------- 啟動 ----------
+/* ---------- 啟動 ---------- */
 async function boot() {
   const app = new Application();
   await app.init({
@@ -103,31 +99,34 @@ async function boot() {
   state.app = app;
 
   const onPrompt = (text) => { promptEl.textContent = text || ''; };
-  const sceneOpts = { viewW: VIEW_W, viewH: VIEW_H, moveMs: MOVE_MS, onPrompt };
-  state.scenes.city = new GridScene({ mapDef: CITY, ...sceneOpts });
-  state.scenes.dungeon = new GridScene({ mapDef: DUNGEON_STUB, ...sceneOpts });
-  switchScene('city');
+  state.city = new GridScene({ mapDef: CITY, viewW: VIEW_W, viewH: VIEW_H, moveMs: MOVE_MS, onPrompt });
+  state.dungeonCtl = createDungeonController({ viewW: VIEW_W, viewH: VIEW_H, onLeave: showCity });
+  showCity();
 
   setupInput();
 
   app.ticker.add((ticker) => {
-    const scene = currentScene();
-    scene.update(ticker.deltaMS);
-    if (!scene.player.moving && held.size > 0) {
-      scene.step(held.values().next().value);
+    if (state.scene === 'city') {
+      state.city.update(ticker.deltaMS);
+      if (!state.city.player.moving && held.size > 0) {
+        state.city.step(held.values().next().value);
+      }
+    } else if (state.scene === 'dungeon') {
+      state.dungeonCtl.update(ticker.deltaMS);
     }
   });
 
   // 無頭驗收掛勾
   window.__game = {
     scene: () => state.scene,
-    idle: () => !currentScene().player.moving,
-    pos: () => ({ x: currentScene().player.x, y: currentScene().player.y }),
-    facing: () => currentScene().player.facing,
-    step: (dir) => currentScene().step(dir),
+    idle: () => state.scene !== 'city' || !state.city.player.moving,
+    pos: () => (state.scene === 'city' ? { x: state.city.player.x, y: state.city.player.y } : null),
+    facing: () => (state.scene === 'city' ? state.city.player.facing : null),
+    step: (dir) => (state.scene === 'city' ? state.city.step(dir) : Promise.resolve('not-city')),
     interact: () => doInteract(),
     promptText: () => promptEl.textContent,
   };
+  window.__dungeon = state.dungeonCtl.hooks;
   window.__READY__ = true;
 }
 

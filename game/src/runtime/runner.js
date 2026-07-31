@@ -21,7 +21,8 @@ export function createRunner({ createWorker, applyAction, onLine, onLog, onStatu
         case 'action': {
           const value = applyAction(m.name, m.args);
           if (c) c.actions.push({ name: m.name, args: m.args });
-          this.worker.postMessage({ type: 'result', value });
+          // applyAction 可能觸發 endRun→terminate（死亡/通關即中止腳本），此時不需回覆
+          if (this.worker) this.worker.postMessage({ type: 'result', value });
           break;
         }
         case 'line':

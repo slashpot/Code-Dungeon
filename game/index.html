@@ -10,7 +10,8 @@
   header h1 { font-size: 16px; margin: 0; letter-spacing: 1px; }
   header span { color: #8a93a5; font-size: 12px; }
   #scene-label { color: #53c8e6; }
-  .stage { width: 640px; margin: 16px auto 0; position: relative; }
+  .wrap { display: flex; gap: 14px; flex-wrap: wrap; justify-content: center; align-items: flex-start; padding: 16px; }
+  .stage { width: 640px; position: relative; flex: none; }
   #game canvas { display: block; border: 1px solid #232735; border-radius: 6px; }
   #msg {
     position: absolute; left: 50%; bottom: 52px; transform: translateX(-50%);
@@ -20,21 +21,81 @@
   }
   #msg.show { opacity: 1; }
   #prompt { height: 24px; margin-top: 8px; text-align: center; color: #e6c453; font-size: 13px; }
-  footer { margin: 6px auto 24px; width: 640px; text-align: center; color: #626b7d; font-size: 12px; }
+  footer { margin: 6px auto 24px; text-align: center; color: #626b7d; font-size: 12px; }
+
+  /* ---------- IDE panel（dungeon 模式才顯示） ---------- */
+  #ide { display: none; width: 540px; flex: none; flex-direction: column; gap: 8px; }
+  body.ide-mode #ide { display: flex; }
+  body.ide-mode footer .city-hint { display: none; }
+  .toolbar { display: flex; gap: 6px; flex-wrap: wrap; }
+  button { background: #1b2130; color: #dfe6ef; border: 1px solid #333c52; border-radius: 6px; padding: 5px 11px; font-size: 13px; cursor: pointer; }
+  button:hover { background: #232b3e; }
+  button:disabled { opacity: 0.35; cursor: default; }
+  button.primary { background: #1d9e75; border-color: #1d9e75; color: #04342c; font-weight: 600; }
+  button.danger { background: #5a2330; border-color: #7a3242; }
+  #dg-level { font-size: 12px; color: #53c8e6; }
+  #editor-box { border: 1px solid #232735; border-radius: 6px; overflow: hidden; }
+  .cm-editor { height: 300px; font-size: 13px; background: #10141d; }
+  .cm-editor .exec-line { background: rgba(90, 162, 232, 0.25); }
+  #run-status { color: #a9b4c6; font-size: 13px; min-height: 18px; }
+  #run-hud { color: #e6c453; font-size: 13px; min-height: 18px; }
+  #run-log { height: 150px; overflow-y: auto; background: #10141d; border: 1px solid #232735; border-radius: 6px; padding: 6px 10px; font: 12px/1.7 "SF Mono", Menlo, monospace; color: #b8c2d4; }
+  #run-log .bad { color: #f09595; } #run-log .good { color: #9fe1cb; }
+  #run-log .warn { color: #fac775; } #run-log .sys { color: #7d8698; }
+
+  /* dungeon 結算面板（蓋在 canvas 上） */
+  #dg-result {
+    position: absolute; inset: 0 0 auto 0; height: 418px; display: none;
+    flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+    background: rgba(8, 10, 16, 0.88); border-radius: 6px; text-align: center;
+  }
+  #dg-title { font-size: 22px; font-weight: 700; }
+  #dg-stats { font-size: 14px; color: #b8c2d4; }
+  #dg-hint { font-size: 12px; color: #8a93a5; max-width: 80%; }
+  #dg-result .btns { display: flex; gap: 8px; margin-top: 6px; }
 </style>
 </head>
 <body>
 <header>
   <h1>CODE CITY</h1>
-  <span>v0.1 dev — M1 地圖可行走</span>
+  <span>v0.1 dev — M2 一關 dungeon</span>
   <span id="scene-label"></span>
 </header>
-<div class="stage">
-  <div id="game"></div>
-  <div id="msg"></div>
-  <div id="prompt"></div>
+<div class="wrap">
+  <div id="ide">
+    <div class="toolbar">
+      <span id="dg-level"></span>
+    </div>
+    <div class="toolbar">
+      <button id="btn-run" class="primary">▶ 執行</button>
+      <button id="btn-fast">⚡ 全速</button>
+      <button id="btn-stop" disabled>■ 停止</button>
+      <button id="btn-reset">↺ 重置</button>
+      <button id="btn-restore">⤺ 還原腳本</button>
+      <button id="btn-vim">Vim: OFF</button>
+      <button id="btn-leave">← 回街上</button>
+    </div>
+    <div id="editor-box"></div>
+    <div id="run-status"></div>
+    <div id="run-hud"></div>
+    <div id="run-log"></div>
+  </div>
+  <div class="stage">
+    <div id="game"></div>
+    <div id="msg"></div>
+    <div id="prompt"></div>
+    <div id="dg-result">
+      <div id="dg-title"></div>
+      <div id="dg-stats"></div>
+      <div id="dg-hint"></div>
+      <div class="btns">
+        <button id="dg-leave" class="primary">← 回街上</button>
+        <button id="dg-close">關閉（再改改腳本）</button>
+      </div>
+    </div>
+  </div>
 </div>
-<footer>方向鍵 / WASD 移動 ・ Z / Enter 互動</footer>
+<footer><span class="city-hint">方向鍵 / WASD 移動 ・ Z / Enter 互動</span></footer>
 <script src="dist/main.js"></script>
 </body>
 </html>

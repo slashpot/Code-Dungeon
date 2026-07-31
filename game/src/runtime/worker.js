@@ -29,8 +29,10 @@ function toES5(src) {
 
 function makeApi(i, globalObj) {
   // 行動/感知 API：async 閘門——呼叫時暫停直譯器，postMessage 給主執行緒，收到 result 才放行。
+  // 參數/回傳值跨越 interpreter↔worker 邊界要做 pseudo↔native 轉換
+  //（getEnemies 回物件陣列、attack(t) 收物件；primitive 會原樣通過）。
   // createAsyncFunction 依函式 arity 決定 callback 位置，不能用 rest 參數（length=0 會爆），
-  // 故依 spec.arity 固定簽名（API v0 最多 2 個參數：distance(a,b)）。
+  // 故依 spec.arity 固定簽名（API v0 最多 1 個參數）。
   for (const spec of actionSpecs) {
     const name = spec.name;
     const arity = spec.arity | 0;
@@ -40,18 +42,10 @@ function makeApi(i, globalObj) {
         pendingCb = cb;
         post({ type: 'action', name, args: [] });
       };
-    } else if (arity === 1) {
+    } else {
       fn = function (a, cb) {
         pendingCb = cb;
-        post({ type: 'action', name, args: a === undefined ? [] : [a] });
-      };
-    } else {
-      fn = function (a, b, cb) {
-        pendingCb = cb;
-        const args = [];
-        if (a !== undefined) args.push(a);
-        if (b !== undefined) args.push(b);
-        post({ type: 'action', name, args });
+        post({ type: 'action', name, args: a === undefined ? [] : [i.pseudoToNative(a)] });
       };
     }
     i.setProperty(globalObj, name, i.createAsyncFunction(fn));
@@ -132,7 +126,7 @@ self.onmessage = (e) => {
     if (pendingCb) {
       const cb = pendingCb;
       pendingCb = null;
-      cb(m.value);
+      cb(interp.nativeToPseudo(m.value));
       if (running) pump();
     }
   }

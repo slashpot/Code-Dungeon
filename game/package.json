@@ -7,7 +7,9 @@
   "scripts": {
     "build": "node build.mjs",
     "serve": "node serve.mjs",
-    "test": "node test/acceptance.js"
+    "test": "node test/engine.test.js && node test/acceptance.js",
+    "test:engine": "node test/engine.test.js",
+    "test:browser": "node test/acceptance.js"
   },
   "dependencies": {
     "@babel/standalone": "^8.0.4",

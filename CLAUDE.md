@@ -19,6 +19,7 @@
 - [x] **M0 技術驗證通過**（2026-07-24，`coding-punk/spike/`）：Godot 4.7.1 .NET ＋ Jint 4.14 spike 五項全過——C# 場景可跑、move/attack 委派、**statement-level 逐行步進含行號**（成敗關鍵，`DebugMode`＋`Debugger.Step`）、CodeEdit JS 高亮、無窮迴圈防呆（`MaxStatements` 全速 46ms 攔截＋`CancellationToken` 停止，玩家 JS 的 try/catch 吃不掉）。架構：Jint 跑背景執行緒、每 statement 停在 semaphore 閘門等主執行緒放行→主執行緒架構上不可能被玩家腳本凍死。驗證：`dotnet build` ＋ `Godot --headless`（場景內建兩階段自動驗收，exit 0=PASS）。**不需評估路線 B，可進 M1。**詳見 `coding-punk/spike/README.md`。
 - [x] **M0-B 技術驗證通過（JS/Web 路線對照組）**（2026-07-24，`coding-punk/spike-web/`）：與 M0 同規格五項全過——canvas 場景 move/attack 委派（Worker↔主執行緒 async 閘門）、**逐 statement 行號**（JS-Interpreter `step()`＋Babel `retainLines` 前置轉譯，const/箭頭函式實測過；quickjs-emscripten 因無 debugger API 出局）、雙層防呆（步數上限 200k/~0.6s 攔 `while(true)` 且 try/catch 吃不掉＋`worker.terminate()` 連永不返回的 native 呼叫都殺得掉、主執行緒不卡）、CodeMirror 6 JS 高亮、**vim motion 開箱即用**（`@replit/codemirror-vim`，hjkl/dw/dd/insert 真實鍵盤事件實測）。驗證：`npm test`（headless Chrome，exit 0=PASS）。⇒ **兩條路線技術上都成立**，Godot vs Web 改為產品面取捨（桌面感/發行 vs 零安裝/vim 免費/ES6 靠轉譯/直譯速度慢一個數量級），對照表見 `coding-punk/spike-web/README.md`；~~尚未翻案，M1 開工前需拍板~~ → 已於 2026-07-31 拍板（見下）。
 - [x] **路線拍板＝Web，翻掉 Godot**（2026-07-31）：正式版整條路線改 HTML+JS——「桌面優先(Steam)」改為「**網頁優先(itch.io)**」，近期目標＝把 Cyberpunk v0.1（城市可行走＋一關 dungeon＋基礎故事）做成**可上傳 itch.io 的 demo**。理由：發行管道鎖 itch.io 網頁、零安裝觸及最大、vim/CodeMirror 免費、開發者本職使用 Pixi.js。渲染選型＝**Pixi.js**（對比過 Phaser：本作探索層刻意保薄——格子移動、無物理——Phaser 的內建功能大多用不上，只需自寫 Tiled JSON 載入器；Pixi 零學習成本勝出）。技術棧＝spike-web 管線（Worker＋JS-Interpreter＋Babel）＋Pixi＋CodeMirror 6＋esbuild。Godot 專案檔與 `coding-punk/spike/` 保留為 M0 歷史紀錄不刪。開發位置：`game/`，里程碑見改寫後的《v0.1 實行步驟.md》。
+- [x] **v0.1-web M1＋M2 完成**（2026-07-31，`game/`）：M1 城市可行走（Pixi 佔位美術、逐格移動、鏡頭跟隨、互動雛形＋機房入口）；M2 一關 dungeon——grid 引擎抽成純 ES module（`game/src/engine/`，node 可直接 import，不再 sloppy-eval）、API v0 14 函式接上 Worker 直譯器管線（補了 pseudo↔native 物件轉換，spike 只驗過 primitive）、CodeMirror IDE panel（執行/全速/停止/重置/還原/vim、逐行反白、par ⭐、死亡重來、通關回城市）、**對拍全綠**：naive/es6/stock@L1、smart@L2、pro@L4 與 prototype 引擎逐回合狀態（位置/HP/藥水/敵人）完全一致。範圍護欄守住：只有 L1、無 dojo/skill/多關。下一步＝M3 基礎故事。
 - [ ] 之後：隨機地圖、技能（fireball 等）、放置模式、直譯器換裝；修煉場擴充（moveToward／explore 需先補「跨回合持久記憶」primitive）
 
 ## 已定案的關鍵決策（含理由，勿輕易翻案）
@@ -45,7 +46,9 @@ L1 走廊（初始腳本可過）→ L2 毒沼（需喝藥水）→ L3 迷宮 �
 
 ## 驗證方法（重要慣例）
 
-改動引擎或關卡後跑 `node test/headless.js`：連通性檢查（每關樓梯/道具 BFS 可達＋par 存在）＋ 難度曲線矩陣（naive 應死在 L2、stock 應通 L5 等；WIN 案例同時驗證 turns ≤ par）＋ explore(dir) 方向 tie-break 檢查＋多階 skill 機制檢查（內建 nearest 是弱版、各階參考實作通過、弱版被 Lv1 測試擋下），共 16 個案例。曾靠這個抓到視野穿牆、無限空轉、尋路卡死、smart 腳本永遠風箏、explore 朝樓梯漂移破壞 L2 教學等 bug。測試靠 sloppy-mode direct eval 取得遊戲內部狀態，測試檔不可加 "use strict"。
+正式版 `game/`：改動後跑 `cd game && npm test`＝`test/engine.test.js`（連通性全 6 關＋L1 案例＋**與 prototype 逐回合對拍** 5 組）＋`test/acceptance.js`（headless Chrome 六項：城市移動/碰撞/進 dungeon/L1 通關/死亡重來/回街上）。引擎行為改動必須同步 prototype 並保持對拍全綠，否則兩邊分岔。
+
+prototype：改動引擎或關卡後跑 `node test/headless.js`：連通性檢查（每關樓梯/道具 BFS 可達＋par 存在）＋ 難度曲線矩陣（naive 應死在 L2、stock 應通 L5 等；WIN 案例同時驗證 turns ≤ par）＋ explore(dir) 方向 tie-break 檢查＋多階 skill 機制檢查（內建 nearest 是弱版、各階參考實作通過、弱版被 Lv1 測試擋下），共 16 個案例。曾靠這個抓到視野穿牆、無限空轉、尋路卡死、smart 腳本永遠風箏、explore 朝樓梯漂移破壞 L2 教學等 bug。測試靠 sloppy-mode direct eval 取得遊戲內部狀態，測試檔不可加 "use strict"。
 
 ## 已定案：正式版路線 = Web（HTML+JS+Pixi），直譯器 = JS-Interpreter＋Babel（2026-07-31 翻案自 Godot+Jint）
 
