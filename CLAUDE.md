@@ -14,9 +14,10 @@
 - [x] 觀察清單補 4.5 節（dojo/skill 觀察）＋ L6，回答「軟門檻是否成立」
 - [x] ~~Cyberpunk 換皮（檔位 A）~~ **做完即回退**（2026-07-14）：受 Code: Terraform 啟發試做（勇者→駭客、藥水→patch、敵人→ICE 系等純文案/配色換皮），實際看過覺得**不直觀**——patch/ICE/腐蝕區這些詞彙反而增加新手理解負擔，奇幻地牢的「藥水回血、毒沼扣血」直覺得多。決策：主題維持奇幻地牢；若日後再議主題，重點在 C（系統內敘事）而非換詞彙。教訓：換皮前先做 A/B 紙上對照或問受測者，別直接全套換。
 - [x] ~~好玩度測試（找 2~3 人玩）~~ **改制**（2026-07-24）：實測 1 人，開場即卡住（無教學）——唯一但關鍵的發現：**新手引導是最大的洞**。找人測試成本過高且卡進度，決策改為 side-project 模式：不再以真人測試作為進度關卡，改用非同步管道（公開網頁連結收回饋），「有回饋就看，沒有也照走」。
-- [ ] **新手引導/教學（最高優先）**：L1 前加引導層、初始腳本逐行註解、失敗給指向性提示；驗收=自己以「假裝第一次玩」走一遍。
+- [x] **新手引導/教學（最高優先）**：L1 前加引導層、初始腳本逐行註解、失敗給指向性提示；驗收=自己以「假裝第一次玩」走一遍。
 - [ ] 正式版方向已定（2026-07-24，見《正式版計劃 — Cyberpunk Coding RPG.md》）：Cyberpunk 世界觀（系統內敘事、API 詞彙不換）、2D 俯視 RPG、解題＋腳本操控並存、Godot（傾向 C#+Jint、桌面優先）。
 - [x] **M0 技術驗證通過**（2026-07-24，`coding-punk/spike/`）：Godot 4.7.1 .NET ＋ Jint 4.14 spike 五項全過——C# 場景可跑、move/attack 委派、**statement-level 逐行步進含行號**（成敗關鍵，`DebugMode`＋`Debugger.Step`）、CodeEdit JS 高亮、無窮迴圈防呆（`MaxStatements` 全速 46ms 攔截＋`CancellationToken` 停止，玩家 JS 的 try/catch 吃不掉）。架構：Jint 跑背景執行緒、每 statement 停在 semaphore 閘門等主執行緒放行→主執行緒架構上不可能被玩家腳本凍死。驗證：`dotnet build` ＋ `Godot --headless`（場景內建兩階段自動驗收，exit 0=PASS）。**不需評估路線 B，可進 M1。**詳見 `coding-punk/spike/README.md`。
+- [x] **M0-B 技術驗證通過（JS/Web 路線對照組）**（2026-07-24，`coding-punk/spike-web/`）：與 M0 同規格五項全過——canvas 場景 move/attack 委派（Worker↔主執行緒 async 閘門）、**逐 statement 行號**（JS-Interpreter `step()`＋Babel `retainLines` 前置轉譯，const/箭頭函式實測過；quickjs-emscripten 因無 debugger API 出局）、雙層防呆（步數上限 200k/~0.6s 攔 `while(true)` 且 try/catch 吃不掉＋`worker.terminate()` 連永不返回的 native 呼叫都殺得掉、主執行緒不卡）、CodeMirror 6 JS 高亮、**vim motion 開箱即用**（`@replit/codemirror-vim`，hjkl/dw/dd/insert 真實鍵盤事件實測）。驗證：`npm test`（headless Chrome，exit 0=PASS）。⇒ **兩條路線技術上都成立**，Godot vs Web 改為產品面取捨（桌面感/發行 vs 零安裝/vim 免費/ES6 靠轉譯/直譯速度慢一個數量級），對照表見 `coding-punk/spike-web/README.md`；**尚未翻案**，M1 開工前需拍板。
 - [ ] 之後：隨機地圖、技能（fireball 等）、放置模式、直譯器換裝；修煉場擴充（moveToward／explore 需先補「跨回合持久記憶」primitive）
 
 ## 已定案的關鍵決策（含理由，勿輕易翻案）

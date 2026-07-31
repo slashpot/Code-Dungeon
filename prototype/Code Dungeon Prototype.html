@@ -61,12 +61,27 @@
   #trialresult { font-family: Consolas, Menlo, monospace; font-size: 12px; line-height: 1.7; margin-top: 8px; }
   #trialresult .pass { color: #9FE1CB; } #trialresult .fail { color: #F09595; } #trialresult .head { color: #F1EFE8; font-weight: 600; }
   .secitem { color: #888780; }
+  /* 新手引導 */
+  #tutbubble { display: none; position: fixed; z-index: 61; max-width: 320px; background: #24241f; border: 1px solid #FAC775; border-radius: 8px; padding: 10px 13px; font-size: 13px; line-height: 1.7; color: #E8E6DD; box-shadow: 0 6px 24px rgba(0,0,0,0.55); }
+  #tutbubble .tstep { font-size: 11px; color: #FAC775; margin-bottom: 4px; }
+  #tutbubble b { color: #F1EFE8; }
+  #tutbubble code { color: #85B7EB; font-family: Consolas, Menlo, monospace; }
+  #tutbubble .tbtns { display: flex; align-items: center; gap: 8px; margin-top: 9px; }
+  #tutbubble #tutok { padding: 3px 14px; font-size: 12px; }
+  #tutbubble #tutskip { border: none; padding: 3px 4px; font-size: 12px; color: #888780; text-decoration: underline; }
+  #tutbubble #tutskip:hover { background: transparent; color: #D3D1C7; }
+  .tut-ring { position: fixed; z-index: 60; pointer-events: none; border: 2px solid #FAC775; border-radius: 6px; animation: tutpulse 1.5s ease-in-out infinite; }
+  @keyframes tutpulse { 0%, 100% { box-shadow: 0 0 0 3px rgba(250,199,117,0.14); } 50% { box-shadow: 0 0 0 8px rgba(250,199,117,0.34); } }
+  #runarrow { display: none; color: #FAC775; font-size: 12px; white-space: nowrap; animation: tutnudge 1s ease-in-out infinite; }
+  @keyframes tutnudge { 0%, 100% { transform: translateX(0); } 50% { transform: translateX(-5px); } }
+  #tutreplay { padding: 2px 8px; font-size: 12px; border-radius: 999px; color: #888780; }
 </style>
 </head>
 <body>
 
 <div class="topbar">
   <h1>Code Dungeon <span style="color:#888780;font-weight:400;">prototype v0</span></h1>
+  <button id="tutreplay" title="重看新手教學">?</button>
   <div style="display:flex;align-items:center;gap:4px;">
     <button id="prevlv" style="padding:5px 8px;">◀</button>
     <span id="lvname" style="font-size:13px;color:#F1EFE8;min-width:96px;text-align:center;"></span>
@@ -75,7 +90,7 @@
   <div class="hpwrap">HP <div class="bar"><div id="hpbar" style="width:100%"></div></div> <span id="hptext">50/50</span></div>
   <div class="hpwrap">藥水 <span id="potiontext">0</span></div>
   <button id="speedbtn">速度 1x</button>
-  <button id="runbtn" class="primary">▶ 執行</button>
+  <button id="runbtn" class="primary">▶ 執行</button><span id="runarrow">◀ 從這裡開始</span>
   <button id="pausebtn">⏸ 暫停</button>
   <button id="stepbtn">⏭ 下一步</button>
   <button id="resetbtn">↺ 重置關卡</button>
@@ -141,6 +156,15 @@ if (enemies.length > 0) {
   <div class="dbody">
     <div id="triallist"></div>
     <div id="trialdetail"></div>
+  </div>
+</div>
+
+<div id="tutbubble">
+  <div class="tstep" id="tutstep"></div>
+  <div id="tuttext"></div>
+  <div class="tbtns">
+    <button id="tutok" class="primary">知道了</button>
+    <button id="tutskip">跳過教學</button>
   </div>
 </div>
 
@@ -352,6 +376,7 @@ function reset() {
   document.getElementById("overlay").style.display = "none";
   render();
   addLog("第 " + (curLevel + 1) + " 關「" + LEVELS[curLevel].name + "」：" + LEVELS[curLevel].hint, "sys");
+  tutOnReset();
 }
 
 // 從勇者位置做 BFS，更新「與勇者的走行距離」表；SIGHT 內標記為已看過。牆會擋視線。
@@ -420,6 +445,7 @@ async function tick() {
   enemyTurn();
   reveal();
   render();
+  tutOnTick();
   if (state.hero.hp <= 0) { endRun(false); throw STOP; }
   if (state.hero.x === state.stairs.x && state.hero.y === state.stairs.y) { endRun(true); throw STOP; }
   if (stopFlag) { running = false; addLog("已手動停止", "sys"); setRunBtn(false); save({ lastLog: document.getElementById("log").innerHTML }); throw STOP; }
@@ -470,6 +496,7 @@ function endRun(win) {
   save(s);
   renderRecord();
   updateLvBtns();
+  tutOnEnd(win, rec);
 }
 
 /* ============================================================
@@ -643,6 +670,7 @@ function loadLevel(i) {
   reset();
   renderRecord();
   updateLvBtns();
+  tutOnLevelLoad();
 }
 
 /* ============================================================
@@ -661,11 +689,14 @@ async function startRun() {
     var keys = Object.keys(api);
     var factory = new Function(keys.join(","), "return (async function(){\n" + code + "\n});");
     var program = factory.apply(null, keys.map(function (k) { return api[k]; }));
+    var rounds = 0;
     while (running && !stopFlag) {
       var before = state.turn;
       await program();
       loopGuard = 0;
       if (state.turn === before) { addLog("腳本跑完一輪但沒有執行任何行動，已停止（至少要呼叫一個行動函式）", "warn"); break; }
+      rounds++;
+      if (rounds === 1) tutOnLoopRestart();   // 第一輪跑完＝玩家正親眼看著腳本從頭重跑（引導 Step 5 的時機）
     }
     if (running) { running = false; setRunBtn(false); }
   } catch (err) {
@@ -928,12 +959,320 @@ function renderSkillBar() {
 
 function openDojo(id) {
   document.getElementById("dojo").classList.add("show");
+  tutOnDojo(true);
   renderTrialList();
   var target = (id && trialDef(id)) ? id : null;
   if (!target) { if (!DOJO_SEL || !trialDef(DOJO_SEL)) DOJO_SEL = null; target = DOJO_SEL || TRIALS[0].id; }
   selectTrial(target);
 }
-function closeDojo() { document.getElementById("dojo").classList.remove("show"); renderSkillBar(); }
+function closeDojo() { document.getElementById("dojo").classList.remove("show"); renderSkillBar(); tutOnDojo(false); }
+
+/* ============================================================
+ * 10.7) 新手引導 — 依《新手引導步驟腳本.md》
+ *       主線 Step 1–6 只在 L1 跑一次；情境步驟（hp/slowmo/reset/api/par/skill）
+ *       各只出現一次，記進 tutorial.seen。存檔欄位 tutorial: {done, step, seen, ran}。
+ *       氣泡與高亮框是 body 下的 fixed 疊層，完全不碰 render() 的重繪流程。
+ *       無頭測試沒有 document.body → TUT.enabled=false，所有 hook 直接 no-op。
+ * ============================================================ */
+var TUT_MAIN_LAST = 6;
+var TUT = {
+  enabled: (typeof document !== "undefined" && !!document.body),
+  s: (function () {
+    var t = loadSave().tutorial || {};
+    return { done: !!t.done, step: t.step || 0, seen: t.seen || [], ran: !!t.ran };
+  })(),
+  cur: null,        // 顯示中的步驟：數字＝主線、字串＝情境；null＝沒顯示
+  queue: [],        // 氣泡一次只有一個，其餘排隊，關掉當前的再顯示
+  dojoOpen: false,
+  restartSeen: false,  // 本次執行是否已看過「腳本重跑」（Step 5 的觸發條件）
+  damaged: false, editedOnce: false, failedOnce: false
+};
+
+function tutBox(l, t, w, h) { return { left: l, top: t, width: w, height: h, right: l + w, bottom: t + h }; }
+function tutElRect(sel) {
+  var el = document.querySelector(sel);
+  if (!el) return null;
+  var r = el.getBoundingClientRect();
+  return tutBox(r.left, r.top, r.width, r.height);
+}
+// 樓梯那一格的螢幕座標：#map 是 32px 固定格的 grid，直接用格座標換算，
+// 不把狀態寫進 .cell（render() 每回合重建 innerHTML 會沖掉）
+function tutStairsRect() {
+  var m = tutElRect("#map");
+  if (!m || !state || !state.stairs) return m;
+  return tutBox(m.left + state.stairs.x * 32, m.top + state.stairs.y * 32, 32, 32);
+}
+
+var TUT_STEPS = {
+  1: { pos: "below",
+    anchor: function () { return tutElRect(".legend"); },
+    rects: function () { return [tutElRect("#mapwrap"), tutElRect(".legend")]; },
+    text: '這裡是地牢。<span style="color:#5DCAA5">綠色</span>是你的勇者，<span style="color:#F0997B">橘色</span>是敵人，<span style="color:#85B7EB">藍色</span>是往下一層的樓梯。<br>暗色的地方是勇者還沒看到的區域——<b>你看得到，但勇者看不到</b>。' },
+  2: { pos: "below",
+    anchor: function () { return tutElRect(".legend"); },
+    rects: function () { return [tutStairsRect()]; },
+    text: '<b>目標：讓勇者走到樓梯。</b><br>這一關的路上有兩隻敵人擋著，得先解決牠們。' },
+  3: { pos: "inner-bottom",
+    anchor: function () { return tutElRect("#editor"); },
+    rects: function () { return [tutElRect("#editor")]; },
+    text: '你不能用鍵盤直接控制勇者。<br>你要<b>寫一段程式，決定他每一步怎麼判斷</b>。<br>這裡已經幫你放了一份能用的腳本，先不用改。' },
+  4: { pos: "below", noOk: true,
+    anchor: function () { return tutElRect("#runbtn"); },
+    rects: function () { return [tutElRect("#runbtn")]; },
+    text: '按【▶ 執行】，勇者就會照你的腳本行動。' },
+  5: { pos: "inner-bottom",
+    anchor: function () { return tutElRect("#editor"); },
+    rects: function () { var r = tutElRect("#editor"); return [r && tutBox(r.left, r.top, r.width, 64)]; },
+    text: '注意看：腳本從頭又跑了一次。<br><b>腳本跑完會自動重來，直到你死掉或通關。</b><br>所以你不需要自己寫 <code>while</code> 迴圈，只要寫「這一步該做什麼」就好。' },
+  6: { pos: "above",
+    anchor: function () { return tutElRect("#log"); },
+    rects: function () { return [tutElRect("#log")]; },
+    text: '每一回合發生的事都會記在這裡。<br>失敗的時候，回來看這裡通常找得到原因。' },
+  hp: { pos: "below",
+    anchor: function () { return tutElRect(".hpwrap"); },
+    rects: function () {
+      var out = [], ns = document.querySelectorAll(".hpwrap");
+      for (var i = 0; i < ns.length; i++) { var r = ns[i].getBoundingClientRect(); out.push(tutBox(r.left, r.top, r.width, r.height)); }
+      return out;
+    },
+    text: '勇者受傷了。HP 歸零就會失敗，關卡從頭開始。<br>地圖上<span style="color:#FAC775">黃色</span>的是藥水，走過去會自動撿起來，用 <code>drinkPotion()</code> 喝掉回 30 HP。' },
+  slowmo: { pos: "below",
+    anchor: function () { return tutElRect("#pausebtn"); },
+    rects: function () { return [tutElRect("#speedbtn"), tutElRect("#pausebtn"), tutElRect("#stepbtn")]; },
+    text: '想看清楚每一步發生什麼？<br>調慢【速度】、或用【⏸ 暫停】和【⏭ 下一步】一格一格看。' },
+  reset: { pos: "below",
+    anchor: function () { return tutElRect("#resetbtn"); },
+    rects: function () { return [tutElRect("#resetbtn"), tutElRect("#reseteditorbtn")]; },
+    text: '【↺ 重置關卡】把地圖恢復原狀，【⤺ 還原程式碼】把腳本還原成一開始的版本。<br>改壞了不用怕。' },
+  next: { pos: "below",
+    anchor: function () { return tutElRect("#nextlv"); },
+    rects: function () { return [tutElRect("#nextlv")]; },
+    text: '通關了！按上面這個【▶】前往第 2 關。<br>之後也可以隨時用 ◀ ▶ 在已解鎖的關卡間往返。' },
+  api: { pos: "above",
+    anchor: function () { return tutElRect("details summary"); },
+    rects: function () { return [tutElRect("details summary")]; },
+    onShow: function () { var d = document.querySelector("details"); if (d) d.open = true; },
+    text: '接下來的關卡光靠初始腳本過不了。<br><b>點開這裡看有哪些函式可以用</b>——共 14 個，例如 <code>hp()</code>、<code>drinkPotion()</code>、<code>getItems()</code>。' },
+  par: { pos: "below",
+    anchor: function () { return tutElRect("#mapwrap"); },
+    rects: function () { return [tutElRect("#ovstats")]; },
+    text: '過關了！不過每關都有一個目標回合數（par）。<br>用更少回合通關會拿到 ⭐——不強制，但那通常代表你的邏輯更聰明。' },
+  skill: { pos: "above",
+    anchor: function () { return tutElRect("#skillbar"); },
+    rects: function () { return [tutElRect("#skillbar")]; },
+    text: '你一直在用的 <code>nearest()</code> 其實是個很笨的版本——它只會回傳清單裡的第一個，不管遠近。<br>點下面的技能自己實作一個更好的，<b>練成後闖關就會用你寫的版本</b>。' }
+};
+
+function tutPersist() { save({ tutorial: { done: TUT.s.done, step: TUT.s.step, seen: TUT.s.seen, ran: TUT.s.ran } }); }
+
+var tutRingPool = [];
+function tutHideUi() {
+  var b = document.getElementById("tutbubble");
+  if (b) b.style.display = "none";
+  for (var i = 0; i < tutRingPool.length; i++) tutRingPool[i].style.display = "none";
+}
+
+function tutRenderCurrent() {
+  if (!TUT.enabled) return;
+  if (TUT.cur === null || TUT.dojoOpen) { tutHideUi(); return; }
+  var def = TUT_STEPS[TUT.cur];
+  if (!def) { TUT.cur = null; tutHideUi(); return; }
+  if (def.onShow) def.onShow();
+  var main = typeof TUT.cur === "number";
+  document.getElementById("tutstep").textContent = main ? ("新手教學 " + TUT.cur + "/" + TUT_MAIN_LAST) : "💡 提示";
+  document.getElementById("tuttext").innerHTML = def.text;
+  document.getElementById("tutok").style.display = def.noOk ? "none" : "";
+  document.getElementById("tutskip").style.display = main ? "" : "none";
+  document.getElementById("tutbubble").style.display = "block";
+  tutReposition();
+}
+
+function tutReposition() {
+  if (!TUT.enabled || TUT.cur === null || TUT.dojoOpen) return;
+  var def = TUT_STEPS[TUT.cur];
+  var rects = (def.rects ? def.rects() : []).filter(function (r) { return !!r; });
+  for (var i = 0; i < rects.length; i++) {
+    var ring = tutRingPool[i];
+    if (!ring) { ring = document.createElement("div"); ring.className = "tut-ring"; document.body.appendChild(ring); tutRingPool[i] = ring; }
+    ring.style.display = "block";
+    ring.style.left = (rects[i].left - 4) + "px";
+    ring.style.top = (rects[i].top - 4) + "px";
+    ring.style.width = (rects[i].width + 4) + "px";
+    ring.style.height = (rects[i].height + 4) + "px";
+  }
+  for (var j = rects.length; j < tutRingPool.length; j++) tutRingPool[j].style.display = "none";
+  var b = document.getElementById("tutbubble");
+  var a = (def.anchor && def.anchor()) || rects[0] || tutBox(20, 20, 0, 0);
+  var bw = b.offsetWidth, bh = b.offsetHeight;
+  var left, top, pos = def.pos || "below";
+  if (pos === "above") { left = a.left; top = a.top - bh - 12; }
+  else if (pos === "inner-bottom") { left = a.left + 14; top = a.bottom - bh - 14; }  // 貼元素內側下緣（編輯器下半部是空的）
+  else { left = a.left; top = a.bottom + 12; }
+  left = Math.max(8, Math.min(left, window.innerWidth - bw - 8));
+  top = Math.max(8, Math.min(top, window.innerHeight - bh - 8));
+  b.style.left = left + "px"; b.style.top = top + "px";
+}
+
+function tutShow(id) {
+  if (!TUT.enabled) return;
+  if (TUT.cur !== null) {
+    if (TUT.cur !== id && TUT.queue.indexOf(id) < 0) TUT.queue.push(id);
+    return;
+  }
+  TUT.cur = id;
+  tutRenderCurrent();
+}
+
+function tutFlush() {
+  if (!TUT.enabled || TUT.cur !== null || !TUT.queue.length) return;
+  var id = TUT.queue.shift();
+  if (typeof id === "number") tutMainShow();   // 主線重新依目前進度與觸發條件決定顯示什麼
+  else tutShow(id);
+}
+
+function tutDismissCur() {   // 氣泡上的「知道了」
+  if (TUT.cur === null) return;
+  var id = TUT.cur;
+  TUT.cur = null; tutHideUi();
+  if (typeof id === "number") tutMainAdvance(id);
+  tutFlush();
+}
+
+function tutMainShow() {
+  if (!TUT.enabled || TUT.s.done || curLevel !== 0) return;
+  var st = TUT.s.step || 1;
+  if (st > TUT_MAIN_LAST) { TUT.s.done = true; tutPersist(); return; }
+  // Step 4 一律顯示（就算以前按過執行——重看教學時也要看得到）；
+  // 只有「當下正在執行中」才跳過：指示已無意義，且 Step 5 會由本輪的重跑事件接手
+  if (st === 4 && running) { TUT.s.step = 5; tutPersist(); return tutMainShow(); }
+  if (st === 5 && !TUT.restartSeen) return;   // Step 5 等「腳本第二輪開始」事件，提前講沒有用
+  tutShow(st);
+}
+
+function tutMainAdvance(fromStep) {
+  if (TUT.s.done) return;
+  if (fromStep >= TUT_MAIN_LAST) {
+    TUT.s.done = true; TUT.s.step = TUT_MAIN_LAST + 1; tutPersist();
+    tutUpdateArrow();
+    return;
+  }
+  TUT.s.step = fromStep + 1; tutPersist();
+  tutMainShow();
+}
+
+function tutSkipAll() {
+  TUT.s.done = true; TUT.s.step = TUT_MAIN_LAST + 1; tutPersist();
+  TUT.cur = null; tutHideUi();
+  TUT.queue = TUT.queue.filter(function (id) { return typeof id !== "number"; });  // 主線丟掉，情境提示保留
+  tutUpdateArrow();
+  tutFlush();
+}
+
+function tutContext(id) {   // 情境步驟：每個只出現一次
+  if (!TUT.enabled || TUT.s.seen.indexOf(id) >= 0) return;
+  TUT.s.seen.push(id); tutPersist();
+  tutShow(id);
+}
+
+/* ---- 掛在引擎流程上的 hook（無頭測試時全部 no-op） ---- */
+function tutOnLevelLoad() {
+  if (!TUT.enabled) return;
+  if (curLevel === 0 && !TUT.s.done) {
+    if (!TUT.s.step) { TUT.s.step = 1; tutPersist(); }
+    if (TUT.cur === null) tutMainShow(); else tutReposition();
+  } else if (typeof TUT.cur === "number") {
+    TUT.cur = null; tutHideUi();   // 離開 L1：主線先收起（回 L1 會續播）
+  }
+  if (curLevel !== 0) TUT.queue = TUT.queue.filter(function (id) { return id !== "next"; });  // 已經換關＝指引目的達成，別再排隊
+  if (curLevel === 1) tutContext("api");
+  if (curLevel === 5) tutContext("skill");
+}
+
+function tutOnReset() {
+  if (!TUT.enabled) return;
+  // 情境氣泡的錨點可能隨重置消失（如結算畫面的 par），直接收掉；主線氣泡只重新定位
+  if (typeof TUT.cur === "string") { TUT.cur = null; tutHideUi(); tutFlush(); }
+  else if (TUT.cur !== null) tutReposition();
+}
+
+function tutOnRunClick() {
+  if (!TUT.enabled) return;
+  TUT.restartSeen = false;   // 重跑事件以「本次執行」為準
+  if (!TUT.s.ran) { TUT.s.ran = true; tutPersist(); tutUpdateArrow(); }
+  if (!TUT.s.done && TUT.s.step === 4) {
+    if (TUT.cur === 4) { TUT.cur = null; tutHideUi(); }
+    tutMainAdvance(4);   // → Step 5（等重跑事件才顯示）
+  }
+}
+
+function tutOnLoopRestart() {
+  if (!TUT.enabled) return;
+  TUT.restartSeen = true;
+  if (!TUT.s.done && TUT.s.step === 5) tutMainShow();
+}
+
+function tutOnTick() {
+  if (!TUT.enabled) return;
+  if (!TUT.damaged && state.dmgTaken > 0) {
+    TUT.damaged = true;
+    // Step 6 的觸發＝「Step 5 完成 或 首次受傷」擇先：還在等重跑事件就直接跳到 log 說明
+    if (!TUT.s.done && TUT.s.step === 5 && TUT.cur !== 5) { TUT.s.step = 6; tutPersist(); tutMainShow(); }
+  }
+  if (state.hero.hp > 0 && state.hero.hp < HERO_MAXHP * 0.7) tutContext("hp");
+  if (TUT.cur !== null) tutReposition();   // HP 數字寬度變動會讓 topbar 元素微移
+}
+
+function tutOnEnd(win, rec) {
+  if (!TUT.enabled) return;
+  // 通過 L1 時若玩家根本沒跟教學走（還停在 Step 1–4）＝目的已達成，主線放手；
+  // 已進到 Step 5/6 則讓最後兩步講完（L1 只要十幾回合，通關常比玩家讀完 Step 5 還快）
+  if (win && curLevel === 0 && !TUT.s.done && TUT.s.step < 5) { TUT.s.done = true; TUT.s.step = TUT_MAIN_LAST + 1; tutPersist(); }
+  if (!win) {
+    TUT.failedOnce = true;
+    if (rec.attempts - (rec.wins || 0) >= 2) tutContext("slowmo");   // 第一次失敗不跳，第二次才是想 debug 的時刻
+    if (TUT.editedOnce) tutContext("reset");
+  } else if (LEVELS[curLevel].par && state.turn > LEVELS[curLevel].par) {
+    tutContext("par");
+  }
+  if (win && curLevel === 0) tutContext("next");   // 首次通過 L1：指引「▶ 前往下一關」（與執行鈕的 ▶ 易混淆）
+}
+
+function tutOnDojo(open) {
+  if (!TUT.enabled) return;
+  TUT.dojoOpen = open;
+  if (open) {
+    if (typeof TUT.cur === "string") TUT.cur = null;   // 情境提示看過即算，進修煉場就收掉
+    tutHideUi();
+  } else {
+    if (TUT.cur !== null) tutRenderCurrent(); else tutFlush();
+  }
+}
+
+function tutUpdateArrow() {
+  var a = document.getElementById("runarrow");
+  if (!a) return;
+  // 跳過教學但還沒按過執行 → 按鈕旁留持續箭頭，直到按過一次
+  a.style.display = (TUT.enabled && TUT.s.done && !TUT.s.ran) ? "inline" : "none";
+}
+
+if (TUT.enabled) {
+  document.getElementById("tutok").addEventListener("click", tutDismissCur);
+  document.getElementById("tutskip").addEventListener("click", tutSkipAll);
+  document.getElementById("tutreplay").addEventListener("click", function () {
+    if (running) return;
+    TUT.s.done = false; TUT.s.step = 1; tutPersist();
+    TUT.restartSeen = false;
+    TUT.cur = null; TUT.queue.length = 0; tutHideUi();
+    if (curLevel !== 0) loadLevel(0); else tutMainShow();
+  });
+  document.getElementById("editor").addEventListener("input", function () {
+    TUT.editedOnce = true;
+    if (TUT.failedOnce) tutContext("reset");
+  });
+  window.addEventListener("resize", tutReposition);
+  window.addEventListener("scroll", tutReposition, true);
+  tutUpdateArrow();
+}
 
 /* ============================================================
  * 11) 事件繫結與啟動
@@ -941,7 +1280,7 @@ function closeDojo() { document.getElementById("dojo").classList.remove("show");
 document.getElementById("dojoback").addEventListener("click", closeDojo);
 document.getElementById("runbtn").addEventListener("click", function () {
   if (running) { stopFlag = true; if (stepResolve) stepResolve(); }
-  else { paused = false; setPauseUi(); startRun(); }
+  else { paused = false; setPauseUi(); tutOnRunClick(); startRun(); }
 });
 document.getElementById("pausebtn").addEventListener("click", function () {
   if (!running) return;
@@ -968,7 +1307,7 @@ document.getElementById("reseteditorbtn").addEventListener("click", function () 
   ed.focus();
 });
 document.getElementById("stepbtn").addEventListener("click", function () {
-  if (!running) { paused = true; setPauseUi(); startRun(); return; }
+  if (!running) { paused = true; setPauseUi(); tutOnRunClick(); startRun(); return; }
   if (!paused) { paused = true; setPauseUi(); return; }
   if (stepResolve) stepResolve();
 });

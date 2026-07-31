@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<link rel="icon" href="data:,">
+<title>M0-B spike — JS/Web 路線驗證</title>
+<style>
+  body { margin: 0; background: #0e1015; color: #dfe6ef; font: 14px/1.5 -apple-system, "PingFang TC", sans-serif; }
+  header { padding: 10px 16px; border-bottom: 1px solid #2a2f3a; display: flex; gap: 12px; align-items: baseline; }
+  header h1 { font-size: 16px; margin: 0; }
+  header span { color: #8a93a5; font-size: 12px; }
+  .wrap { display: flex; gap: 12px; padding: 12px 16px; align-items: flex-start; }
+  .left { flex: 1 1 520px; min-width: 420px; }
+  .right { flex: 0 0 auto; }
+  .toolbar { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+  button { background: #222835; color: #dfe6ef; border: 1px solid #394152; border-radius: 6px; padding: 5px 10px; cursor: pointer; }
+  button:hover { background: #2c3444; }
+  #editor { border: 1px solid #2a2f3a; border-radius: 6px; overflow: hidden; }
+  .cm-editor { height: 380px; font-size: 13px; background: #14161c; }
+  .cm-editor .exec-line { background: rgba(90, 162, 232, 0.25); }
+  #status { margin-top: 8px; color: #a9b4c6; font-size: 13px; min-height: 20px; }
+  #scene { border: 1px solid #2a2f3a; border-radius: 6px; display: block; }
+  #log { margin-top: 8px; width: 352px; height: 200px; overflow-y: auto; background: #14161c; border: 1px solid #2a2f3a; border-radius: 6px; padding: 8px; font: 12px/1.6 "SF Mono", Menlo, monospace; color: #a9d18a; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🧪 M0-B spike — JS/Web 路線驗證</h1>
+  <span>JS-Interpreter + Babel(ES6→ES5) in Web Worker ／ CodeMirror 6 + vim</span>
+</header>
+<div class="wrap">
+  <div class="left">
+    <div class="toolbar">
+      <button id="btn-run">▶ 逐行執行</button>
+      <button id="btn-fast">⚡ 全速執行</button>
+      <button id="btn-stop">■ 停止(terminate)</button>
+      <button id="btn-sample">範例</button>
+      <button id="btn-loop">無窮迴圈</button>
+      <button id="btn-hang">native 卡死</button>
+      <button id="btn-vim">Vim: ON</button>
+    </div>
+    <div id="editor"></div>
+    <div id="status"></div>
+  </div>
+  <div class="right">
+    <canvas id="scene" width="352" height="220"></canvas>
+    <div id="log"></div>
+  </div>
+</div>
+<script src="dist/main.js"></script>
+</body>
+</html>
