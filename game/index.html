@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<link rel="icon" href="data:,">
+<title>Code City — v0.1 dev</title>
+<style>
+  body { margin: 0; background: #0b0d12; color: #dfe6ef; font: 14px/1.5 -apple-system, "PingFang TC", sans-serif; }
+  header { padding: 10px 16px; border-bottom: 1px solid #232735; display: flex; gap: 12px; align-items: baseline; }
+  header h1 { font-size: 16px; margin: 0; letter-spacing: 1px; }
+  header span { color: #8a93a5; font-size: 12px; }
+  #scene-label { color: #53c8e6; }
+  .stage { width: 640px; margin: 16px auto 0; position: relative; }
+  #game canvas { display: block; border: 1px solid #232735; border-radius: 6px; }
+  #msg {
+    position: absolute; left: 50%; bottom: 52px; transform: translateX(-50%);
+    max-width: 90%; padding: 6px 14px; border-radius: 6px;
+    background: rgba(10, 12, 18, 0.92); border: 1px solid #3a4160; color: #dfe6ef;
+    opacity: 0; transition: opacity 0.2s; pointer-events: none; white-space: nowrap;
+  }
+  #msg.show { opacity: 1; }
+  #prompt { height: 24px; margin-top: 8px; text-align: center; color: #e6c453; font-size: 13px; }
+  footer { margin: 6px auto 24px; width: 640px; text-align: center; color: #626b7d; font-size: 12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>CODE CITY</h1>
+  <span>v0.1 dev — M1 地圖可行走</span>
+  <span id="scene-label"></span>
+</header>
+<div class="stage">
+  <div id="game"></div>
+  <div id="msg"></div>
+  <div id="prompt"></div>
+</div>
+<footer>方向鍵 / WASD 移動 ・ Z / Enter 互動</footer>
+<script src="dist/main.js"></script>
+</body>
+</html>

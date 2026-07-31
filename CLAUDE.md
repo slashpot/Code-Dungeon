@@ -15,14 +15,15 @@
 - [x] ~~Cyberpunk 換皮（檔位 A）~~ **做完即回退**（2026-07-14）：受 Code: Terraform 啟發試做（勇者→駭客、藥水→patch、敵人→ICE 系等純文案/配色換皮），實際看過覺得**不直觀**——patch/ICE/腐蝕區這些詞彙反而增加新手理解負擔，奇幻地牢的「藥水回血、毒沼扣血」直覺得多。決策：主題維持奇幻地牢；若日後再議主題，重點在 C（系統內敘事）而非換詞彙。教訓：換皮前先做 A/B 紙上對照或問受測者，別直接全套換。
 - [x] ~~好玩度測試（找 2~3 人玩）~~ **改制**（2026-07-24）：實測 1 人，開場即卡住（無教學）——唯一但關鍵的發現：**新手引導是最大的洞**。找人測試成本過高且卡進度，決策改為 side-project 模式：不再以真人測試作為進度關卡，改用非同步管道（公開網頁連結收回饋），「有回饋就看，沒有也照走」。
 - [x] **新手引導/教學（最高優先）**：L1 前加引導層、初始腳本逐行註解、失敗給指向性提示；驗收=自己以「假裝第一次玩」走一遍。
-- [ ] 正式版方向已定（2026-07-24，見《正式版計劃 — Cyberpunk Coding RPG.md》）：Cyberpunk 世界觀（系統內敘事、API 詞彙不換）、2D 俯視 RPG、解題＋腳本操控並存、Godot（傾向 C#+Jint、桌面優先）。
+- [ ] 正式版方向已定（2026-07-24，見《正式版計劃 — Cyberpunk Coding RPG.md》）：Cyberpunk 世界觀（系統內敘事、API 詞彙不換）、2D 俯視 RPG、解題＋腳本操控並存、~~Godot（傾向 C#+Jint、桌面優先）~~ → 2026-07-31 引擎翻案為 Web（見下方「路線拍板」）。
 - [x] **M0 技術驗證通過**（2026-07-24，`coding-punk/spike/`）：Godot 4.7.1 .NET ＋ Jint 4.14 spike 五項全過——C# 場景可跑、move/attack 委派、**statement-level 逐行步進含行號**（成敗關鍵，`DebugMode`＋`Debugger.Step`）、CodeEdit JS 高亮、無窮迴圈防呆（`MaxStatements` 全速 46ms 攔截＋`CancellationToken` 停止，玩家 JS 的 try/catch 吃不掉）。架構：Jint 跑背景執行緒、每 statement 停在 semaphore 閘門等主執行緒放行→主執行緒架構上不可能被玩家腳本凍死。驗證：`dotnet build` ＋ `Godot --headless`（場景內建兩階段自動驗收，exit 0=PASS）。**不需評估路線 B，可進 M1。**詳見 `coding-punk/spike/README.md`。
-- [x] **M0-B 技術驗證通過（JS/Web 路線對照組）**（2026-07-24，`coding-punk/spike-web/`）：與 M0 同規格五項全過——canvas 場景 move/attack 委派（Worker↔主執行緒 async 閘門）、**逐 statement 行號**（JS-Interpreter `step()`＋Babel `retainLines` 前置轉譯，const/箭頭函式實測過；quickjs-emscripten 因無 debugger API 出局）、雙層防呆（步數上限 200k/~0.6s 攔 `while(true)` 且 try/catch 吃不掉＋`worker.terminate()` 連永不返回的 native 呼叫都殺得掉、主執行緒不卡）、CodeMirror 6 JS 高亮、**vim motion 開箱即用**（`@replit/codemirror-vim`，hjkl/dw/dd/insert 真實鍵盤事件實測）。驗證：`npm test`（headless Chrome，exit 0=PASS）。⇒ **兩條路線技術上都成立**，Godot vs Web 改為產品面取捨（桌面感/發行 vs 零安裝/vim 免費/ES6 靠轉譯/直譯速度慢一個數量級），對照表見 `coding-punk/spike-web/README.md`；**尚未翻案**，M1 開工前需拍板。
+- [x] **M0-B 技術驗證通過（JS/Web 路線對照組）**（2026-07-24，`coding-punk/spike-web/`）：與 M0 同規格五項全過——canvas 場景 move/attack 委派（Worker↔主執行緒 async 閘門）、**逐 statement 行號**（JS-Interpreter `step()`＋Babel `retainLines` 前置轉譯，const/箭頭函式實測過；quickjs-emscripten 因無 debugger API 出局）、雙層防呆（步數上限 200k/~0.6s 攔 `while(true)` 且 try/catch 吃不掉＋`worker.terminate()` 連永不返回的 native 呼叫都殺得掉、主執行緒不卡）、CodeMirror 6 JS 高亮、**vim motion 開箱即用**（`@replit/codemirror-vim`，hjkl/dw/dd/insert 真實鍵盤事件實測）。驗證：`npm test`（headless Chrome，exit 0=PASS）。⇒ **兩條路線技術上都成立**，Godot vs Web 改為產品面取捨（桌面感/發行 vs 零安裝/vim 免費/ES6 靠轉譯/直譯速度慢一個數量級），對照表見 `coding-punk/spike-web/README.md`；~~尚未翻案，M1 開工前需拍板~~ → 已於 2026-07-31 拍板（見下）。
+- [x] **路線拍板＝Web，翻掉 Godot**（2026-07-31）：正式版整條路線改 HTML+JS——「桌面優先(Steam)」改為「**網頁優先(itch.io)**」，近期目標＝把 Cyberpunk v0.1（城市可行走＋一關 dungeon＋基礎故事）做成**可上傳 itch.io 的 demo**。理由：發行管道鎖 itch.io 網頁、零安裝觸及最大、vim/CodeMirror 免費、開發者本職使用 Pixi.js。渲染選型＝**Pixi.js**（對比過 Phaser：本作探索層刻意保薄——格子移動、無物理——Phaser 的內建功能大多用不上，只需自寫 Tiled JSON 載入器；Pixi 零學習成本勝出）。技術棧＝spike-web 管線（Worker＋JS-Interpreter＋Babel）＋Pixi＋CodeMirror 6＋esbuild。Godot 專案檔與 `coding-punk/spike/` 保留為 M0 歷史紀錄不刪。開發位置：`game/`，里程碑見改寫後的《v0.1 實行步驟.md》。
 - [ ] 之後：隨機地圖、技能（fireball 等）、放置模式、直譯器換裝；修煉場擴充（moveToward／explore 需先補「跨回合持久記憶」primitive）
 
 ## 已定案的關鍵決策（含理由，勿輕易翻案）
 
-1. **語言 = JavaScript**，網頁遊戲零安裝；prototype 用 `await` 注入執行玩家程式碼，正式版需換 JS-Interpreter（才有逐行高亮、更強沙箱）。
+1. **語言 = JavaScript**，網頁遊戲零安裝；prototype 用 `await` 注入執行玩家程式碼，正式版已定 JS-Interpreter＋Babel 管線（逐行高亮、更強沙箱；spike-web 驗證，見下方「已定案：正式版路線」）。
 2. **回合制**：一次行動函式呼叫 = 一回合；確定性模擬（同 seed 同結果），無頭測試與離線進度都靠這個。
 3. **腳本跑完自動從頭執行**（TFWR 模式），不需 `while(alive())` 樣板；明確迴圈保留給多階段策略。防呆：跑完一輪零行動即停止。
 4. **4 方向移動、曼哈頓距離**；輔助函式（explore/moveToward/nearest）prototype 內建，正式版改逐步解鎖。
@@ -46,9 +47,18 @@ L1 走廊（初始腳本可過）→ L2 毒沼（需喝藥水）→ L3 迷宮 �
 
 改動引擎或關卡後跑 `node test/headless.js`：連通性檢查（每關樓梯/道具 BFS 可達＋par 存在）＋ 難度曲線矩陣（naive 應死在 L2、stock 應通 L5 等；WIN 案例同時驗證 turns ≤ par）＋ explore(dir) 方向 tie-break 檢查＋多階 skill 機制檢查（內建 nearest 是弱版、各階參考實作通過、弱版被 Lv1 測試擋下），共 16 個案例。曾靠這個抓到視野穿牆、無限空轉、尋路卡死、smart 腳本永遠風箏、explore 朝樓梯漂移破壞 L2 教學等 bug。測試靠 sloppy-mode direct eval 取得遊戲內部狀態，測試檔不可加 "use strict"。
 
-## ~~待決~~ 已定案：正式版直譯器 = Jint（2026-07-24，M0 spike 驗證）
+## 已定案：正式版路線 = Web（HTML+JS+Pixi），直譯器 = JS-Interpreter＋Babel（2026-07-31 翻案自 Godot+Jint）
 
-正式版走 Godot + C# + **Jint 4.14**，原本三條路的取捨消失：Jint 原生支援完整 ES6+（const/箭頭函式/template string 皆實測通過）、statement-level 逐行步進（`options.DebugMode()`＋`options.InitialStepMode(StepMode.Into)`＋`engine.Debugger.Step` 事件給 `Location.Start.Line`）、雙層防呆（`MaxStatements` 硬上限＋`CancellationToken`，後者丟 `ExecutionCanceledException`，玩家 JS 的 try/catch 攔不到）。prototype 的 regex 轉換 hack 與 ES5 限制**只適用於網頁版**；網頁 prototype 若續留（收回饋用）維持現狀即可，不再投資直譯器換裝。範例腳本仍用 var 是為了與 prototype 相容，非技術限制。spike 細節見 `coding-punk/spike/README.md`。
+翻案歷程：2026-07-24 曾定案 Godot+C#+Jint（M0 spike 通過，紀錄保留於 `coding-punk/spike/`，不刪）；2026-07-31 因 demo 目標鎖 itch.io 網頁發行、零安裝觸及最大、vim/CodeMirror 免費、開發者本職使用 Pixi 而翻案走 Web。技術組成（皆經 M0-B spike 驗證，`coding-punk/spike-web/`）：
+
+- **玩家腳本執行**：Worker 內 Babel 前置轉譯（ES5 化、`retainLines` 保行號）→ JS-Interpreter 逐 statement 步進（`step()`＋`node.loc` 行號）；行動函式走 async 閘門（暫停直譯器、postMessage 主執行緒、收到 result 才放行）→ 主執行緒架構上不可能被玩家腳本凍死。
+- **雙層防呆**：步數上限（玩家 try/catch 吃不掉）＋ `worker.terminate()`（連永不返回的 native 呼叫都殺得掉）。
+- **遊戲內 IDE**：CodeMirror 6（JS 高亮＋`@replit/codemirror-vim`）。
+- **渲染**：Pixi.js；探索層格子移動、無物理，Tiled JSON 載入器自寫。**建置**：esbuild。**發行**：itch.io HTML5（zip）優先，桌面感日後 Electron/Tauri 包殼再議。
+
+已知取捨（詳見 spike-web README「誠實的取捨」）：ES6 是轉譯出來的（const/箭頭實測過，generator/async 需 regenerator 未驗）、直譯速度比 Jint 慢一個數量級（回合制玩法無感，未來大量無頭模擬/離線進度要留意）、bundle 肥（Babel standalone 佔大頭，M4 可瘦身成少數 plugin）。
+
+prototype 的 regex 轉換 hack 維持現狀（收回饋用，不再投資換裝）；正式版 `game/` 用新管線根治該已知限制。
 
 ## 已知限制 / 待辦
 

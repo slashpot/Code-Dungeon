@@ -1,6 +1,7 @@
 # 正式版計劃 — Cyberpunk Coding RPG(暫名 Code City)
 
-> 2026-07-24 定稿 v1。前提決策:玩法採「解題 + 腳本操控」並存;引擎採 Godot。
+> 2026-07-24 定稿 v1。前提決策:玩法採「解題 + 腳本操控」並存;~~引擎採 Godot~~。
+> 2026-07-31 修訂 v2:**引擎翻案為 Web(HTML+JS+Pixi.js)**,發行改網頁優先(itch.io),詳見 §6;近期目標=v0.1 內容做成 itch.io demo。
 > 本文件是 prototype(Code Dungeon)→ 正式版的總體計劃,細部設計另開文件。
 
 ---
@@ -53,21 +54,24 @@ IDE 就是你的武器,程式能力就是你的角色成長。
 
 ## 6. 技術架構
 
-### 6.1 Godot 選型的兩條路(需在技術驗證期二選一)
+### 6.1 技術選型(2026-07-31 定案:Web/HTML+JS,翻案自 Godot)
 
-| 路線 | 組成 | 優點 | 風險 |
-|---|---|---|---|
-| **A(建議)** | Godot 4 + C# + **Jint**(.NET 的 JS 直譯器) | Jint 有 statement-level 步進 → 逐行高亮可行;C# 生態成熟 | **C# 無法輸出 Web 版**(Godot 4 現況)→ 等於選擇桌面優先 |
-| B | Godot 4 GDScript + QuickJS GDExtension | 保留 Web 輸出可能 | 步進/沙箱整合要自己造,工程量大且冷門 |
+> 翻案歷程:2026-07-24 曾定 Godot+C#+Jint(M0 spike 通過);同日完成的 M0-B spike(`coding-punk/spike-web/`)證明 Web 路線同規格五項全過,選擇回到產品面。2026-07-31 拍板 Web:demo 目標鎖 itch.io 網頁發行、零安裝觸及最大、vim/CodeMirror 免費、開發者本職使用 Pixi。Godot spike 保留為紀錄(`coding-punk/spike/`),不刪。
 
-**建議接受 A 並定調桌面優先(Steam)**:TFWR 本身就是 Steam 遊戲,付費桌面版與本作商業模式相符;prototype 的「零安裝網頁」優勢讓給 demo(現有 HTML prototype 可直接當試玩版/行銷素材)。
+| 組件 | 選型 | 依據 |
+|---|---|---|
+| 渲染 | **Pixi.js** | 開發者既有技能(零學習成本);探索層刻意保薄(格子移動、無物理),Phaser 的內建功能大多用不上;Tiled JSON 載入器自寫即可 |
+| 玩家腳本直譯 | **JS-Interpreter + Babel 前置轉譯**(Worker 內) | M0-B 驗證:逐 statement 行號、雙層防呆(步數上限 + `worker.terminate()`)、主執行緒架構上不會被玩家腳本凍死 |
+| 遊戲內 IDE | **CodeMirror 6**(+`@replit/codemirror-vim`) | 高亮/行號/vim 開箱即用 |
+| 建置 | **esbuild** | 沿用 spike-web 既有模式 |
+| 發行 | **itch.io HTML5 優先**;桌面感日後 Electron/Tauri 包殼再議(Steam 屆時再評估) | 「零安裝網頁」重新成為主打通路,而非讓給 demo |
 
 ### 6.2 移植與沿用
 
-- 遊戲內 IDE:Godot `CodeEdit` node(原生支援語法高亮、行號)。
-- 玩家腳本執行:Jint 取代 prototype 的 regex+await hack → 根治「函式運算式內呼叫行動函式會炸」的已知限制,ES6 直接可用(prototype 守 ES5 的顧慮解除)。
-- 確定性模擬 + 無頭回歸測試是移植的**驗收標準**:C# 重寫引擎後,16 案例測試(連通性/難度曲線/par/skill 機制)必須全綠,舊 JS 引擎當 reference implementation 對拍。
-- 存檔:localStorage → Godot 存檔 + Steam Cloud(順帶解決「不跨裝置」已知限制)。
+- 遊戲內 IDE:CodeMirror 6(高亮、行號、vim 皆現成套件)。
+- 玩家腳本執行:JS-Interpreter+Babel 管線取代 prototype 的 regex+await hack → 根治「函式運算式內呼叫行動函式會炸」的已知限制;ES6 靠 Babel 前置轉譯(const/箭頭已驗,generator/async 需 regenerator 未驗)。
+- 確定性模擬 + 無頭回歸測試是移植的**驗收標準**:引擎重構為純 ES module(node 可直接 import,不再靠 sloppy-eval)後,16 案例測試(連通性/難度曲線/par/skill 機制)必須全綠,prototype 的 JS 引擎當 reference implementation 對拍。
+- 存檔:localStorage 沿用 + 匯出/匯入按鈕解決「不跨裝置」已知限制(雲存檔日後再議)。
 
 ## 7. 開發階段
 
@@ -76,31 +80,31 @@ IDE 就是你的武器,程式能力就是你的角色成長。
 > 決策改為 **side-project 模式:不再以真人測試作為關卡,先把遊戲做完整**。
 > 測試改用零成本管道:prototype 掛上 itch.io / 網頁公開連結,收非同步回饋即可。
 
-- **新手引導/教學(最高優先)**——唯一一筆實測資料指向這裡。最低限度:L1 前加引導層(這是編輯器→這是跑→改這一行看看),初始腳本逐行註解,失敗時給指向性提示。做完自己以「假裝第一次玩」走一遍驗收。
+- ✅ **新手引導/教學(最高優先)**——唯一一筆實測資料指向這裡。最低限度:L1 前加引導層(這是編輯器→這是跑→改這一行看看),初始腳本逐行註解,失敗時給指向性提示。做完自己以「假裝第一次玩」走一遍驗收。(2026-07-31 完成)
 - 敘事/題目設計文件初稿;美術風格探索(俯視 pixel art 參考集)。
 
-### Phase 1 — 技術驗證(4–6 週)
+### Phase 1 — 技術驗證(大半已過,收尾中)
 驗收物:一個醜但能跑的場景,包含——
-- Godot + Jint 跑玩家 JS,逐行步進 + 高亮 + 錯誤行號
-- CodeEdit 遊戲內編輯器(高亮/存讀檔)
-- Code Dungeon L1 在 C# 引擎重現,16 案例回歸測試移植且全綠
-- 跨回合持久記憶 primitive 原型
-任一不過 → 回頭評估路線 B 或縮規格,**不進 Phase 2**。
+- [x] Worker 跑玩家 JS,逐行步進 + 高亮 + 行號(M0-B spike 五項全過,2026-07-24)
+- [x] 遊戲內編輯器 CodeMirror 6(高亮/vim;存讀檔於 v0.1-web M2 接上)
+- [ ] Code Dungeon L1 在 ES module 引擎重現,16 案例回歸測試移植且全綠(排入 v0.1-web M2)
+- [ ] 跨回合持久記憶 primitive 原型
+細部里程碑改由《v0.1 實行步驟.md》(v0.1-web,M1–M4)承接。
 
 ### Phase 2 — 垂直切片(8–12 週)
 一個街區、主線第一章、3–5 個情境解題、1 個自動化任務、IDE 三類強化各至少 1 個、暫代美術。
 目標:20–40 分鐘完整體驗,含「解題 → 獲得 plugin → 用在自動化任務」的焊接時刻。
 
 ### Phase 3 — 切片回饋(非同步,不卡進度)
-不再要求湊人現場測試。垂直切片放上 itch.io / Steam demo 分支,附一頁回饋表單;
+不再要求湊人現場測試。垂直切片放上 itch.io,附一頁回饋表單;
 社群管道(Reddit r/incremental_games、TFWR 社群、巴哈)發試玩連結收非同步回饋。
 觀察清單方法論沿用(A/B 路徑都算成功、反覆送死才是失敗),但改成「有回饋就看,沒有也照走」。
 
 ### Phase 4 — 量產(6 個月+)
-主線 3–4 章、30–50 題、10–15 個自動化關卡、正式美術音效、Steam 頁面與 demo(現有 HTML prototype 改裝)。
+主線 3–4 章、30–50 題、10–15 個自動化關卡、正式美術音效、itch.io 正式頁持續更新;Steam(桌面包殼版)屆時再評估。
 
 ### Phase 5 — 打磨與發行
-本地化(至少中英)、成就、放置模式、Steam Next Fest demo。
+本地化(至少中英)、成就、放置模式;若屆時有桌面包殼版,再議 Steam Next Fest demo。
 
 ## 8. 風險與對策
 
@@ -109,8 +113,8 @@ IDE 就是你的武器,程式能力就是你的角色成長。
 | RPG 城市內容成本失控 | MVP 鎖一個街區;城市只做敘事容器不做開放世界 |
 | 解題像刷題功課 | 支柱 2 硬約束:每題必有情境+世界反饋;Phase 3 專項驗證 |
 | Cyberpunk 再度不直觀 | 教訓已入案:API 詞彙不換、只做系統內敘事;美術風格先出參考集給人看 |
-| Godot C# 無 Web 輸出 | 定調桌面優先,HTML prototype 充當網頁 demo |
-| Jint 步進/沙箱不如預期 | Phase 1 硬驗收,失敗即換路線 B,不帶病進切片 |
+| JS-Interpreter 直譯速度慢(比 Jint 一個數量級) | 回合制玩法無感;未來離線進度/大量無頭模擬時引擎保持純函式、可跳過渲染全速跑 |
+| Babel standalone bundle 肥(worker ~4.9MB) | M4 瘦身:只留 arrow/block-scoping 等必要 plugin,不用整包 preset-env |
 | 三迴圈互相稀釋(都不深) | 自動化迴圈是已驗證核心,優先保深度;解題迴圈靠「解完變 plugin」掛到它身上,探索迴圈保持薄 |
 
 ## 9. 額外建議
