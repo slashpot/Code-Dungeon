@@ -6,8 +6,8 @@ import { LEVELS, STARTER_CODE } from '../engine/levels.js';
 import { createRunner } from '../runtime/runner.js';
 import { createEditor } from '../ide/editor.js';
 import { DungeonScene } from './scene.js';
+import { loadSave, save } from '../save.js';
 
-const SAVE_KEY = 'codeCityV01';
 const LEVEL_IDX = 0; // v0.1 範圍護欄：只有 L1
 const MAX_STEPS = 300000;
 const LOG_LIMIT = 300;
@@ -21,14 +21,7 @@ const ACTION_SPECS = [
   { name: 'drinkPotion', arity: 0 }, { name: 'explore', arity: 1 },
 ];
 
-function loadSave() {
-  try { return JSON.parse(localStorage.getItem(SAVE_KEY)) || {}; } catch (e) { return {}; }
-}
-function save(patch) {
-  try { localStorage.setItem(SAVE_KEY, JSON.stringify({ ...loadSave(), ...patch })); } catch (e) {}
-}
-
-export function createDungeonController({ viewW, viewH, onLeave }) {
+export function createDungeonController({ viewW, viewH, onLeave, onWin }) {
   const el = (id) => document.getElementById(id);
   const els = {
     editor: el('editor-box'), status: el('run-status'), hud: el('run-hud'), log: el('run-log'),
@@ -127,6 +120,7 @@ export function createDungeonController({ viewW, viewH, onLeave }) {
     els.result.style.display = 'flex';
     els.status.textContent = win ? '通關' : '死亡';
     log(win ? '=== 通關！ ===' : `=== 死亡（死因：${st.lastHit || '未知'}）===`, win ? 'good' : 'bad');
+    if (win && onWin) onWin();
   }
 
   function saveCode() { if (editor) save({ code: editor.getDoc() }); }
@@ -222,7 +216,7 @@ export function createDungeonController({ viewW, viewH, onLeave }) {
     turn: () => (game ? game.state.turn : 0),
     par: () => LEVELS[LEVEL_IDX].par,
     linesSeen: () => linesSeen,
-    getCode: () => (editor ? editor.getDoc() : ''),
+    getCode: () => { ensureEditor(); return editor.getDoc(); },
     setCode: (code) => { ensureEditor(); editor.setDoc(code); },
     logHas: (text) => els.log.textContent.includes(text),
     vimOn: () => vimOn,

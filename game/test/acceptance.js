@@ -1,5 +1,5 @@
-// 瀏覽器自動驗收（M1＋M2）：build → 靜態伺服 → headless Chrome 六項驗證 → exit 0 = 全過。
-// 慣例對齊 spike-web（npm test）與 prototype（node test/headless.js）。
+// 瀏覽器自動驗收（M1＋M2＋M3）：build → 靜態伺服 → headless Chrome 九項驗證 → exit 0 = 全過。
+// M3 驗收＝完整劇情流程無死路：開場獨白 → 接案解鎖機房 → 通關 → 交差 To be continued → 重載能接續。
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import fs from 'node:fs';
@@ -40,7 +40,7 @@ try {
   fail(`找不到/啟不動 Chrome：${e.message}（可設 CHROME_PATH 環境變數指定）`);
 }
 
-const hardTimeout = setTimeout(() => fail('整體逾時（90s）'), 90000);
+const hardTimeout = setTimeout(() => fail('整體逾時（150s）'), 150000);
 
 try {
   const page = await browser.newPage();
@@ -55,15 +55,36 @@ try {
 
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const g = (expr) => page.evaluate(`window.__game.${expr}`);
+  const d = (expr) => page.evaluate(`window.__dungeon.${expr}`);
+  const s = (expr) => page.evaluate(`window.__story.${expr}`);
   const walk = async (dir, n) => {
     for (let i = 0; i < n; i++) {
       const r = await g(`step('${dir}')`);
       if (r !== 'ok') throw new Error(`walk ${dir} 第 ${i + 1} 步 → ${r}（pos=${JSON.stringify(await g('pos()'))}）`);
     }
   };
+  const finishDialogue = async () => {
+    for (let i = 0; i < 40 && (await s('active()')); i++) {
+      await s('advance()');
+      await sleep(25);
+    }
+    return !(await s('active()'));
+  };
   const results = {};
 
-  // ① 移動：程式 step ×3 ＋ 真實鍵盤 ArrowRight ×1
+  // ① 開場獨白：載入即出現、可逐句前進、關閉後 intro flag 落檔
+  {
+    const shown = await s('active()');
+    const finished = await finishDialogue();
+    const flags = await s('flags()');
+    const quest = await s('quest()');
+    results.intro = {
+      pass: shown && finished && flags.intro && quest.includes('老周'),
+      detail: `顯示=${shown} 走完=${finished} intro=${flags.intro} 任務="${quest}"`,
+    };
+  }
+
+  // ② 移動：程式 step ×3 ＋ 真實鍵盤 ArrowRight ×1
   {
     const p0 = await g('pos()');
     await walk('right', 3);
@@ -81,7 +102,7 @@ try {
     };
   }
 
-  // ② 碰撞：往下是外牆 → blocked、位置不變
+  // ③ 碰撞：往下是外牆 → blocked、位置不變
   {
     const before = await g('pos()');
     const r = await g("step('down')");
@@ -92,43 +113,61 @@ try {
     };
   }
 
-  // ③ 進入 dungeon：走到機房門 → 互動 → IDE 模式＋初始腳本已載入
+  // ④ 門鎖與接案：未接案敲門被拒 → 找老周對話接案 → 門開了能進 IDE
   {
     await walk('right', 2);   // (7,13)
     await walk('up', 9);      // (7,4)
     await walk('right', 2);   // (9,4)
-    const faceDoor = await g("step('up')"); // 門是 solid：blocked 但轉向
+    await g("step('up')");
+    const locked = await g('interact()');
+    const stillCity = await g('scene()');
+    // 去找老周（C 在 (5,11)）
+    await walk('down', 4);    // (9,8)
+    await walk('left', 3);    // (6,8)
+    await walk('down', 3);    // (6,11)
+    await g("step('left')");
     const prompt = await g('promptText()');
+    const talk = await g('interact()');
+    const talked = await finishDialogue();
+    const flags = await s('flags()');
+    const quest = await s('quest()');
+    // 回到門口進機房
+    await walk('up', 3);
+    await walk('right', 3);
+    await walk('up', 4);      // (9,4)
+    await g("step('up')");
     const enter = await g('interact()');
     const inDungeon = await g('scene()');
     const ideVisible = await page.evaluate(() => document.body.classList.contains('ide-mode'));
-    const code = await page.evaluate('window.__dungeon.getCode()');
-    results.enter = {
-      pass: faceDoor === 'blocked' && prompt.includes('機房')
-        && enter === 'enter-dungeon' && inDungeon === 'dungeon'
-        && ideVisible && code.includes('getEnemies'),
-      detail: `門提示="${prompt}" scene=${inDungeon} ide=${ideVisible} 腳本含getEnemies=${code.includes('getEnemies')}`,
+    const code = await d('getCode()');
+    results.unlock = {
+      pass: locked === 'locked' && stillCity === 'city'
+        && prompt.includes('老周') && talk === 'client' && talked && flags.accepted
+        && quest.includes('機房')
+        && enter === 'enter-dungeon' && inDungeon === 'dungeon' && ideVisible && code.includes('getEnemies'),
+      detail: `敲門=${locked} 老周="${prompt}"→${talk} accepted=${flags.accepted} 任務="${quest}" 進門=${enter}/${inDungeon} ide=${ideVisible}`,
     };
   }
 
-  // ④ 初始腳本通關 L1：⚡ 全速 → won、turns ≤ par、有逐行事件、有結算 log
+  // ⑤ 初始腳本通關 L1：⚡ 全速 → won、turns ≤ par、逐行事件、job done flag
   {
     await page.click('#btn-fast');
     let won = true;
     try {
       await page.waitForFunction("window.__dungeon.status() === 'won'", { timeout: 20000 });
     } catch { won = false; }
-    const turn = await page.evaluate('window.__dungeon.turn()');
-    const par = await page.evaluate('window.__dungeon.par()');
-    const lines = await page.evaluate('window.__dungeon.linesSeen()');
-    const winLog = await page.evaluate("window.__dungeon.logHas('=== 通關')");
+    const turn = await d('turn()');
+    const par = await d('par()');
+    const lines = await d('linesSeen()');
+    const winLog = await d("logHas('=== 通關')");
+    const flags = await s('flags()');
     results.winL1 = {
-      pass: won && turn <= par && lines > 0 && winLog,
-      detail: `won=${won} turns=${turn}/par ${par} 逐行事件=${lines} 通關log=${winLog}`,
+      pass: won && turn <= par && lines > 0 && winLog && flags.done,
+      detail: `won=${won} turns=${turn}/par ${par} 逐行事件=${lines} 通關log=${winLog} done=${flags.done}`,
     };
   }
 
-  // ⑤ 死亡與重來：爛腳本 → dead；還原腳本 → 再通關
+  // ⑥ 死亡與重來：爛腳本 → dead；還原腳本 → 再通關
   {
     await page.click('#dg-close');
     await page.evaluate(`window.__dungeon.setCode("move('right');")`);
@@ -137,7 +176,7 @@ try {
     try {
       await page.waitForFunction("window.__dungeon.status() === 'dead'", { timeout: 20000 });
     } catch { died = false; }
-    const deadLog = await page.evaluate("window.__dungeon.logHas('=== 死亡')");
+    const deadLog = await d("logHas('=== 死亡')");
     await page.click('#dg-close');
     await page.click('#btn-restore');
     await page.click('#btn-fast');
@@ -151,9 +190,8 @@ try {
     };
   }
 
-  // ⑥ Vim 相對行號：vim ON → 游標行絕對、其餘相對；vim OFF → 恢復絕對行號
+  // ⑦ Vim 相對行號：vim ON → 游標行絕對、其餘相對；vim OFF → 恢復絕對行號
   {
-    const d = (expr) => page.evaluate(`window.__dungeon.${expr}`);
     await d(`setCode(${JSON.stringify('a\nb\nc\nd\ne\nf\ng\nh')})`);
     await page.click('#btn-vim'); // OFF → ON
     await d('setCursorLine(6)');
@@ -171,27 +209,59 @@ try {
     };
   }
 
-  // ⑦ 回街上：結算面板的「← 回街上」→ 城市、位置保留、IDE 收起
+  // ⑧ 交差與 To be continued：回街上 → 找老周 → 報告 → TBC → 關閉
   {
     await page.click('#dg-leave');
     const backScene = await g('scene()');
     const backPos = await g('pos()');
     const ideGone = await page.evaluate(() => !document.body.classList.contains('ide-mode'));
-    results.leave = {
-      pass: backScene === 'city' && backPos.x === 9 && backPos.y === 4 && ideGone,
-      detail: `scene=${backScene} pos=(${backPos.x},${backPos.y}) ide收起=${ideGone}`,
+    await walk('down', 4);
+    await walk('left', 3);
+    await walk('down', 3);    // (6,11)
+    await g("step('left')");
+    const talk = await g('interact()');
+    const talked = await finishDialogue();
+    const tbcShown = await s('tbcVisible()');
+    const flags = await s('flags()');
+    const quest = await s('quest()');
+    await page.click('#tbc');
+    await sleep(50);
+    const tbcGone = !(await s('tbcVisible()'));
+    results.report = {
+      pass: backScene === 'city' && backPos.x === 9 && backPos.y === 4 && ideGone
+        && talk === 'client' && talked && flags.reported && tbcShown && tbcGone && quest === '',
+      detail: `回街=${backScene}@(${backPos.x},${backPos.y}) 交差=${talk} reported=${flags.reported} TBC=${tbcShown}→關閉=${tbcGone} 任務="${quest}"`,
+    };
+  }
+
+  // ⑨ 重載接續：flags／位置／編輯器程式碼都要還在
+  {
+    await page.reload({ waitUntil: 'load' });
+    await page.waitForFunction('window.__READY__ === true', { timeout: 15000 });
+    await sleep(100);
+    const introAgain = await s('active()');
+    const flags = await s('flags()');
+    const pos = await g('pos()');
+    const quest = await s('quest()');
+    const code = await d('getCode()');
+    results.persist = {
+      pass: !introAgain && flags.intro && flags.accepted && flags.done && flags.reported
+        && pos.x === 6 && pos.y === 11 && quest === '' && code === 'a\nb\nc\nd\ne\nf\ng\nh',
+      detail: `獨白重播=${introAgain} flags=${JSON.stringify(flags)} pos=(${pos.x},${pos.y}) code保留=${code === 'a\nb\nc\nd\ne\nf\ng\nh'}`,
     };
   }
 
   // 4. 報告
   const ITEMS = [
-    ['move', '① 逐格移動：程式步進＋真實鍵盤事件'],
-    ['collide', '② 碰撞阻擋：grid 查表、位置不變'],
-    ['enter', '③ 進入 dungeon：IDE 模式＋初始腳本載入'],
-    ['winL1', '④ 初始腳本通關 L1（含逐行事件與 par）'],
-    ['deathRetry', '⑤ 爛腳本死亡 → 還原 → 再通關'],
-    ['relnum', '⑥ Vim 相對行號：ON 相對／OFF 絕對'],
-    ['leave', '⑦ 回街上：位置保留、IDE 收起'],
+    ['intro', '① 開場獨白：自動出現、逐句前進、flag 落檔'],
+    ['move', '② 逐格移動：程式步進＋真實鍵盤事件'],
+    ['collide', '③ 碰撞阻擋：grid 查表、位置不變'],
+    ['unlock', '④ 門鎖與接案：敲門被拒 → 老周接案 → 進機房'],
+    ['winL1', '⑤ 初始腳本通關 L1（含逐行事件與 job done）'],
+    ['deathRetry', '⑥ 爛腳本死亡 → 還原 → 再通關'],
+    ['relnum', '⑦ Vim 相對行號：ON 相對／OFF 絕對'],
+    ['report', '⑧ 交差 → To be continued → 關閉'],
+    ['persist', '⑨ 重載接續：flags／位置／程式碼保留'],
   ];
   console.log('\n== 瀏覽器驗收結果 ==');
   let allPass = true;

@@ -11,12 +11,13 @@ const DIRS = {
 };
 
 export class GridScene {
-  constructor({ mapDef, viewW, viewH, moveMs, onPrompt }) {
+  constructor({ mapDef, viewW, viewH, moveMs, onPrompt, onStep }) {
     this.map = parseMap(mapDef);
     this.viewW = viewW;
     this.viewH = viewH;
     this.moveMs = moveMs;
     this.onPrompt = onPrompt;
+    this.onStep = onStep || null;
 
     this.container = new Container();
     this.container.addChild(this.buildTileLayer());
@@ -128,6 +129,7 @@ export class GridScene {
         const resolve = p.resolve;
         p.resolve = null;
         this.refreshPrompt();
+        if (this.onStep) this.onStep(p.x, p.y);
         if (resolve) resolve('ok');
       }
       this.drawPlayer();

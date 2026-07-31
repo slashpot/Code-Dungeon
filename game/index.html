@@ -53,13 +53,35 @@
   #dg-stats { font-size: 14px; color: #b8c2d4; }
   #dg-hint { font-size: 12px; color: #8a93a5; max-width: 80%; }
   #dg-result .btns { display: flex; gap: 8px; margin-top: 6px; }
+
+  /* ---------- 劇情 UI ---------- */
+  #quest { color: #e6c453; font-size: 12px; margin-left: auto; }
+  #dlg {
+    position: absolute; left: 10px; right: 10px; bottom: 44px; display: none;
+    background: rgba(8, 10, 16, 0.94); border: 1px solid #3a4160; border-radius: 8px;
+    padding: 10px 14px 8px; z-index: 6;
+  }
+  #dlg-speaker { color: #53c8e6; font-size: 12px; font-weight: 600; margin-bottom: 2px; }
+  #dlg-text { font-size: 14px; line-height: 1.7; min-height: 46px; }
+  #dlg-more { text-align: right; color: #e6c453; font-size: 11px; animation: dlgblink 1s step-end infinite; }
+  @keyframes dlgblink { 50% { opacity: 0.2; } }
+  #tbc {
+    position: fixed; inset: 0; z-index: 90; display: none;
+    flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+    background: rgba(4, 5, 9, 0.97); cursor: pointer;
+  }
+  #tbc.show { display: flex; }
+  #tbc .big { font-size: 30px; font-weight: 700; letter-spacing: 8px; color: #dfe6ef; }
+  #tbc .sub { font-size: 13px; color: #8a93a5; }
+  #tbc .hint { font-size: 12px; color: #626b7d; }
 </style>
 </head>
 <body>
 <header>
   <h1>CODE CITY</h1>
-  <span>v0.1 dev — M2 一關 dungeon</span>
+  <span>v0.1 dev — M3 基礎故事</span>
   <span id="scene-label"></span>
+  <span id="quest"></span>
 </header>
 <div class="wrap">
   <div id="ide">
@@ -93,7 +115,17 @@
         <button id="dg-close">關閉（再改改腳本）</button>
       </div>
     </div>
+    <div id="dlg">
+      <div id="dlg-speaker"></div>
+      <div id="dlg-text"></div>
+      <div id="dlg-more">▼ Z / Enter</div>
+    </div>
   </div>
+</div>
+<div id="tbc">
+  <div class="big">TO BE CONTINUED</div>
+  <div class="sub">Code City v0.1 — 感謝遊玩！之後的章節還在路上。</div>
+  <div class="hint">Z / Enter 繼續</div>
 </div>
 <footer><span class="city-hint">方向鍵 / WASD 移動 ・ Z / Enter 互動</span></footer>
 <script src="dist/main.js"></script>
