@@ -225,6 +225,9 @@ export function createDungeonController({ viewW, viewH, onLeave }) {
     getCode: () => (editor ? editor.getDoc() : ''),
     setCode: (code) => { ensureEditor(); editor.setDoc(code); },
     logHas: (text) => els.log.textContent.includes(text),
+    vimOn: () => vimOn,
+    setCursorLine: (n) => editor.helpers.setCursorLine(n),
+    lineNumberTexts: () => editor.helpers.lineNumberTexts(),
   };
 
   return { enter, leave, update, hooks };

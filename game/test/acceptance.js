@@ -53,6 +53,7 @@ try {
   await page.goto(url, { waitUntil: 'load' });
   await page.waitForFunction('window.__READY__ === true', { timeout: 15000 });
 
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const g = (expr) => page.evaluate(`window.__game.${expr}`);
   const walk = async (dir, n) => {
     for (let i = 0; i < n; i++) {
@@ -150,7 +151,27 @@ try {
     };
   }
 
-  // ⑥ 回街上：結算面板的「← 回街上」→ 城市、位置保留、IDE 收起
+  // ⑥ Vim 相對行號：vim ON → 游標行絕對、其餘相對；vim OFF → 恢復絕對行號
+  {
+    const d = (expr) => page.evaluate(`window.__dungeon.${expr}`);
+    await d(`setCode(${JSON.stringify('a\nb\nc\nd\ne\nf\ng\nh')})`);
+    await page.click('#btn-vim'); // OFF → ON
+    await d('setCursorLine(6)');
+    await sleep(80); // 相對行號經 microtask reconfigure 重畫
+    const rel = (await d('lineNumberTexts()')).join(',');
+    await d('setCursorLine(3)');
+    await sleep(80);
+    const rel2 = (await d('lineNumberTexts()')).join(',');
+    await page.click('#btn-vim'); // ON → OFF
+    await sleep(80);
+    const abs = (await d('lineNumberTexts()')).join(',');
+    results.relnum = {
+      pass: rel.includes('5,4,3,2,1,6,1,2') && rel2.includes('2,1,3,1,2,3,4,5') && abs.includes('1,2,3,4,5,6,7,8'),
+      detail: `游標行6="${rel}" 游標行3="${rel2}" vim關="${abs}"`,
+    };
+  }
+
+  // ⑦ 回街上：結算面板的「← 回街上」→ 城市、位置保留、IDE 收起
   {
     await page.click('#dg-leave');
     const backScene = await g('scene()');
@@ -169,7 +190,8 @@ try {
     ['enter', '③ 進入 dungeon：IDE 模式＋初始腳本載入'],
     ['winL1', '④ 初始腳本通關 L1（含逐行事件與 par）'],
     ['deathRetry', '⑤ 爛腳本死亡 → 還原 → 再通關'],
-    ['leave', '⑥ 回街上：位置保留、IDE 收起'],
+    ['relnum', '⑥ Vim 相對行號：ON 相對／OFF 絕對'],
+    ['leave', '⑦ 回街上：位置保留、IDE 收起'],
   ];
   console.log('\n== 瀏覽器驗收結果 ==');
   let allPass = true;
