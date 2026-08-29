@@ -75,6 +75,20 @@
   #runarrow { display: none; color: #FAC775; font-size: 12px; white-space: nowrap; animation: tutnudge 1s ease-in-out infinite; }
   @keyframes tutnudge { 0%, 100% { transform: translateX(0); } 50% { transform: translateX(-5px); } }
   #tutreplay { padding: 2px 8px; font-size: 12px; border-radius: 999px; color: #888780; }
+  /* 語法高亮：透明字的 textarea 疊在著色的 <pre> 上（零依賴） */
+  .hlwrap { position: relative; overflow: hidden; }
+  .hlwrap.grow { flex: 1; display: flex; min-height: 320px; }
+  .hlpre { position: absolute; top: 0; left: 0; z-index: 0; margin: 0; box-sizing: border-box; overflow: hidden;
+           pointer-events: none; -webkit-user-select: none; user-select: none;
+           white-space: pre-wrap; overflow-wrap: break-word; word-break: normal; }
+  .hlwrap textarea::selection { background: rgba(133,183,235,0.32); }
+  .hl-com { color: #8C8A80; }
+  .hl-key { color: #F09595; }
+  .hl-lit, .hl-num { color: #B99BE0; }
+  .hl-str { color: #FAC775; }
+  .hl-api { color: #9FE1CB; }
+  .hl-fn  { color: #85B7EB; }
+  .hl-op  { color: #A9A79F; }
 </style>
 </head>
 <body>
@@ -598,6 +612,143 @@ function transformPlayerCode(src) {
 }
 
 /* ============================================================
+ * 8.5) 語法高亮 — 編輯器著色（零依賴）
+ *   做法：把 textarea 包進 .hlwrap，背後壓一個字體/內距/尺寸完全複製的 <pre>，
+ *   textarea 本身字色轉為透明、只留游標與選取 —— 打字/undo/選取全是原生行為。
+ *   高亮只是外觀：環境不支援（如無頭測試的 DOM stub）或出錯就整段跳過，編輯器照常可用。
+ * ============================================================ */
+function hlWords(s) { var o = {}, a = s.split(" "); for (var i = 0; i < a.length; i++) o[a[i]] = true; return o; }
+var HL_KEY = hlWords("var let const function return if else for while do break continue switch case default new delete typeof instanceof in of this try catch finally throw void class extends super yield async await");
+var HL_LIT = hlWords("true false null undefined NaN Infinity");
+var HL_API = hlWords("alive hp hasPotion getEnemies getItems getStairs myPos distance nearest move moveToward attack drinkPotion explore log");
+var HL_RE_WS = /\s+/y;
+var HL_RE_NUM = /(?:0[xXbBoO][0-9a-fA-F]+|(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)/y;
+var HL_RE_ID = /[A-Za-z_$][A-Za-z0-9_$]*/y;
+var HL_LIST = [], HL_RESIZE_BOUND = false;
+
+function hlEsc(s) { return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+function hlCallAhead(src, i) { while (i < src.length && /\s/.test(src.charAt(i))) i++; return src.charAt(i) === "("; }
+// 「/」是除號還是正規式：看上一個有意義的 token
+function hlRegexOk(prev) { return !(prev === ")" || prev === "]" || prev === "}" || prev === "@ident" || prev === "@num" || prev === "@str"); }
+function hlScanRegex(s, i) {
+  var j = i + 1, inClass = false, n = s.length;
+  while (j < n) {
+    var c = s.charAt(j);
+    if (c === "\\") { j += 2; continue; }
+    if (c === "\n") return i;                                  // 跨行→不是正規式
+    if (c === "[") inClass = true;
+    else if (c === "]") inClass = false;
+    else if (c === "/" && !inClass) { j++; while (j < n && /[a-z]/.test(s.charAt(j))) j++; return j; }
+    j++;
+  }
+  return i;
+}
+
+// 最小 JS tokenizer：註解/字串/數字/關鍵字/API/呼叫/運算子
+function highlightJS(src) {
+  var out = [], i = 0, n = src.length, prev = "", m;
+  function emit(cls, text) { out.push(cls ? '<span class="' + cls + '">' + hlEsc(text) + "</span>" : hlEsc(text)); }
+  while (i < n) {
+    var c = src.charAt(i), c2 = src.charAt(i + 1);
+    HL_RE_WS.lastIndex = i;
+    if ((m = HL_RE_WS.exec(src))) { emit("", m[0]); i = HL_RE_WS.lastIndex; continue; }
+    if (c === "/" && c2 === "/") { var e1 = src.indexOf("\n", i); if (e1 < 0) e1 = n; emit("hl-com", src.slice(i, e1)); i = e1; continue; }
+    if (c === "/" && c2 === "*") { var e2 = src.indexOf("*/", i + 2); e2 = e2 < 0 ? n : e2 + 2; emit("hl-com", src.slice(i, e2)); i = e2; continue; }
+    if (c === '"' || c === "'" || c === "`") {
+      var j = i + 1;
+      while (j < n) {
+        var d = src.charAt(j);
+        if (d === "\\") { j += 2; continue; }
+        if (d === c) { j++; break; }
+        if (d === "\n" && c !== "`") break;                    // 未封口的引號不吃掉下一行
+        j++;
+      }
+      emit("hl-str", src.slice(i, j)); i = j; prev = "@str"; continue;
+    }
+    if ((c >= "0" && c <= "9") || (c === "." && c2 >= "0" && c2 <= "9")) {
+      HL_RE_NUM.lastIndex = i;
+      if ((m = HL_RE_NUM.exec(src))) { emit("hl-num", m[0]); i = HL_RE_NUM.lastIndex; prev = "@num"; continue; }
+    }
+    if (/[A-Za-z_$]/.test(c)) {
+      HL_RE_ID.lastIndex = i; m = HL_RE_ID.exec(src);
+      var w = m[0], cls;
+      i = HL_RE_ID.lastIndex;
+      if (prev === ".") cls = hlCallAhead(src, i) ? "hl-fn" : "";        // t.hp 的 hp 不算 API
+      else if (HL_KEY[w] === true) cls = "hl-key";
+      else if (HL_LIT[w] === true) cls = "hl-lit";
+      else if (HL_API[w] === true) cls = "hl-api";
+      else cls = hlCallAhead(src, i) ? "hl-fn" : "";
+      emit(cls, w);
+      prev = HL_KEY[w] === true ? "@kw" : "@ident";
+      continue;
+    }
+    if (c === "/" && hlRegexOk(prev)) {
+      var r = hlScanRegex(src, i);
+      if (r > i) { emit("hl-str", src.slice(i, r)); i = r; prev = "@str"; continue; }
+    }
+    emit("+-*/%=<>!&|^~?:".indexOf(c) >= 0 ? "hl-op" : "", c);
+    prev = c; i++;
+  }
+  return out.join("");
+}
+
+function hlSyncAll() {
+  for (var i = HL_LIST.length - 1; i >= 0; i--) {
+    if (HL_LIST[i].ta.isConnected === false) HL_LIST.splice(i, 1);       // dojo 重建的舊編輯器
+    else HL_LIST[i].sync();
+  }
+}
+function hlRefresh(ta) { if (ta && ta._hlRender) ta._hlRender(); }        // 程式碼被程式改寫後呼叫
+
+function attachHighlighter(ta, grow) {
+  try {
+    if (!ta || ta._hlRender || !ta.parentNode || typeof ta.parentNode.insertBefore !== "function") return;
+    if (typeof window === "undefined" || typeof window.getComputedStyle !== "function") return;
+    var wrap = document.createElement("div");
+    wrap.className = "hlwrap" + (grow ? " grow" : "");
+    var pre = document.createElement("pre");
+    pre.className = "hlpre";
+    pre.setAttribute("aria-hidden", "true");
+    ta.parentNode.insertBefore(wrap, ta);
+    wrap.appendChild(pre);
+    wrap.appendChild(ta);
+    var cs = window.getComputedStyle(ta);
+    ["fontFamily", "fontSize", "fontWeight", "fontStyle", "lineHeight", "letterSpacing", "textIndent", "tabSize",
+     "paddingTop", "paddingRight", "paddingBottom", "paddingLeft", "borderRadius",
+     "borderTopWidth", "borderRightWidth", "borderBottomWidth", "borderLeftWidth"].forEach(function (p) {
+      if (cs[p]) pre.style[p] = cs[p];
+    });
+    pre.style.borderStyle = "solid";
+    pre.style.borderColor = "transparent";
+    pre.style.color = cs.color;
+    pre.style.background = cs.backgroundColor;
+    ta.style.position = "relative";
+    ta.style.zIndex = "1";
+    ta.style.background = "transparent";
+    ta.style.color = "transparent";
+    ta.style.caretColor = "#F1EFE8";
+    function sync() {
+      var bw = (parseFloat(cs.borderLeftWidth) || 0) + (parseFloat(cs.borderRightWidth) || 0);
+      var sb = ta.offsetWidth - ta.clientWidth - bw;          // 垂直捲軸寬（macOS 疊加式捲軸為 0）
+      pre.style.left = ta.offsetLeft + "px";
+      pre.style.top = ta.offsetTop + "px";
+      pre.style.width = Math.max(0, ta.offsetWidth - (sb > 0 ? sb : 0)) + "px";
+      pre.style.height = ta.offsetHeight + "px";
+      pre.scrollTop = ta.scrollTop;
+      pre.scrollLeft = ta.scrollLeft;
+    }
+    function render() { pre.innerHTML = highlightJS(ta.value + "\n"); sync(); }
+    ta.addEventListener("input", render);
+    ta.addEventListener("scroll", sync);
+    if (typeof ResizeObserver === "function") new ResizeObserver(sync).observe(ta);   // #trialeditor 可拉高
+    if (!HL_RESIZE_BOUND) { HL_RESIZE_BOUND = true; window.addEventListener("resize", hlSyncAll); }
+    HL_LIST.push({ ta: ta, sync: sync });
+    ta._hlRender = render;
+    render();
+  } catch (e) { /* 高亮失敗不影響遊戲：textarea 維持原樣 */ }
+}
+
+/* ============================================================
  * 9) UI 與渲染
  * ============================================================ */
 function addLog(msg, cls) {
@@ -852,6 +1003,7 @@ function selectTrial(id) {
   btn.addEventListener("click", function () { validateTrial(trial); });
   var res = document.createElement("div"); res.id = "trialresult";
   detail.appendChild(ed); detail.appendChild(btn); detail.appendChild(res);
+  attachHighlighter(ed);
 }
 
 function caseExpected(c) {
@@ -1303,6 +1455,7 @@ document.getElementById("reseteditorbtn").addEventListener("click", function () 
   if (!confirm("還原成初始腳本？目前編輯器內的程式碼會被覆蓋。")) return;
   var ed = document.getElementById("editor");
   ed.value = DEFAULT_CODE;
+  hlRefresh(ed);
   save({ code: DEFAULT_CODE });
   ed.focus();
 });
@@ -1374,6 +1527,9 @@ loadLevel(Math.min(loadSave().cur || 0, unlockedCount() - 1));
     });
   } catch (e) {}
 })();
+
+// 編輯器語法高亮（在還原存檔程式碼之後才掛，首畫就是最新內容）
+attachHighlighter(document.getElementById("editor"), true);
 </script>
 </body>
 </html>
