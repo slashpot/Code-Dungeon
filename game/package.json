@@ -20,7 +20,9 @@
     "pixi.js": "^8.0.0"
   },
   "devDependencies": {
+    "@types/node": "^26.1.2",
     "esbuild": "^0.25.0",
-    "puppeteer-core": "^25.3.0"
+    "puppeteer-core": "^25.3.0",
+    "typescript": "^7.0.2"
   }
 }
