@@ -134,12 +134,12 @@ if (enemies.length > 0) {
       <summary>API 參考（v0，共 14 個）</summary>
       <table>
         <tr><td><code>alive()</code></td><td>是否存活（寫明確迴圈時用，非必要）</td><td><code>move(dir)</code></td><td>朝 "up/down/left/right" 走一步</td></tr>
-        <tr><td><code>myPos()</code></td><td>勇者目前座標 {x, y}</td><td><code>explore(dir?)</code></td><td>見上（含方向參數）</td></tr>
-        <tr><td><code>hp()</code></td><td>目前生命值</td><td><code>moveToward(t)</code></td><td>朝目標走一步（會穿毒沼，不會繞）</td></tr>
-        <tr><td><code>hasPotion()</code></td><td>身上是否有藥水</td><td><code>attack(t)</code></td><td>攻擊相鄰目標（射程 1）</td></tr>
-        <tr><td><code>getEnemies()</code></td><td>視野內敵人 [{x,y,hp,type}]</td><td><code>drinkPotion()</code></td><td>喝藥水，回 30 HP</td></tr>
-        <tr><td><code>getItems()</code></td><td>已看見的道具（走上去自動撿）</td><td><code>explore(dir?)</code></td><td>朝最近的未探索區走一步；可選 dir（"up"/"down"/"left"/"right"）指定傾向方向，看見樓梯後預設朝樓梯</td></tr>
-        <tr><td><code>getStairs()</code></td><td>樓梯位置，沒看過回傳 null</td><td><code>distance(t)</code></td><td>與目標的曼哈頓距離</td></tr>
+        <tr><td><code>myPos()</code></td><td>勇者目前座標 {x, y}</td><td><code>moveToward(t)</code></td><td>朝目標走一步（會穿毒沼，不會繞）</td></tr>
+        <tr><td><code>hp()</code></td><td>目前生命值</td><td><code>attack(t)</code></td><td>攻擊相鄰目標（射程 1）</td></tr>
+        <tr><td><code>hasPotion()</code></td><td>身上是否有藥水</td><td><code>drinkPotion()</code></td><td>喝藥水，回 30 HP</td></tr>
+        <tr><td><code>getEnemies()</code></td><td>視野內敵人 [{x,y,hp,type}]</td><td><code>explore(dir?)</code></td><td>朝最近的未探索區走一步；可選 dir（"up"/"down"/"left"/"right"）指定傾向方向，看見樓梯後預設朝樓梯</td></tr>
+        <tr><td><code>getItems()</code></td><td>已看見的道具（走上去自動撿）</td><td><code>distance(t)</code></td><td>與目標的曼哈頓距離</td></tr>
+        <tr><td><code>getStairs()</code></td><td>樓梯位置，沒看過回傳 null</td><td><code>log(msg)</code></td><td>輸出訊息到右側日誌（除錯用，不算回合）</td></tr>
         <tr><td><code>nearest(list)</code></td><td>清單中最近的一個</td><td></td><td>行動類每呼叫一次 = 一回合，敵人也會動；腳本跑完自動從頭執行（頂層變數會重置）</td></tr>
       </table>
     </details>
